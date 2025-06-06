@@ -6,6 +6,7 @@ import tempfile
 
 import coverage
 from corpus import Corpus
+from network_harness import NetworkHarness
 
 class Fuzzer:
     """Base fuzzer scaffold with simple coverage tracking."""
@@ -13,9 +14,13 @@ class Fuzzer:
     def __init__(self, corpus_dir="corpus"):
         self.corpus = Corpus(corpus_dir)
 
-    def _run_once(self, target, data, timeout, file_input=False):
-        """Execute target with the provided input data and record coverage."""
+    def _run_once(self, target, data, timeout, file_input=False, network=None):
+        """Execute target once and record coverage."""
         coverage_set = set()
+        if network:
+            coverage_set = network.run(target, data, timeout)
+            self.corpus.save_if_interesting(data, coverage_set)
+            return
         try:
             if file_input:
                 with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -49,6 +54,13 @@ class Fuzzer:
 
     def run(self, args):
         mode = "file" if args.file_input else "stdin"
+        harness = None
+        if args.tcp_host and args.tcp_port:
+            harness = NetworkHarness(args.tcp_host, args.tcp_port, udp=False)
+            mode = "tcp"
+        elif args.udp_host and args.udp_port:
+            harness = NetworkHarness(args.udp_host, args.udp_port, udp=True)
+            mode = "udp"
         logging.info("Running %s fuzzer", mode)
         logging.info("Target: %s", args.target)
         logging.info("Iterations: %d", args.iterations)
@@ -56,7 +68,7 @@ class Fuzzer:
         for i in range(args.iterations):
             data = os.urandom(args.input_size)
             logging.debug("Iteration %d sending %d bytes", i, len(data))
-            self._run_once(args.target, data, args.timeout, args.file_input)
+            self._run_once(args.target, data, args.timeout, args.file_input, harness)
 
 
 def parse_args():
@@ -85,6 +97,10 @@ def parse_args():
         default="corpus",
         help="Directory to store interesting test cases",
     )
+    parser.add_argument("--tcp-host", help="Host to connect to via TCP")
+    parser.add_argument("--tcp-port", type=int, help="Port for TCP connection")
+    parser.add_argument("--udp-host", help="Host to send UDP packets to")
+    parser.add_argument("--udp-port", type=int, help="Port for UDP packets")
     return parser.parse_args()
 
 
