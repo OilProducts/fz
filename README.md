@@ -90,4 +90,12 @@ To send input via a file instead of stdin:
 python3 main.py --target /path/to/binary --iterations 1000 --file-input
 ```
 
+Coverage is gathered automatically using `ptrace`. Inputs that execute new
+basic blocks are stored in the corpus directory. Use `--corpus-dir` to change
+where these inputs are saved:
+
+```bash
+python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out
+```
+
 This main script is minimal and will evolve alongside the project's features.
