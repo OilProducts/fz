@@ -75,10 +75,11 @@ This phase focuses on analyzing the collected data to identify unique and intere
 
 ## Basic Usage
 
-Run the scaffolding entry point to start the fuzzer:
+Run the scaffolding entry point to start the fuzzer. The fuzzer sends random
+bytes to the target's standard input on each iteration:
 
 ```bash
-python3 main.py --target /path/to/binary --iterations 1000
+python3 main.py --target /path/to/binary --iterations 1000 --input-size 64
 ```
 
 This main script is minimal and will evolve alongside the project's features.
