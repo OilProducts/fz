@@ -72,3 +72,13 @@ This phase focuses on analyzing the collected data to identify unique and intere
 
 # Supporting Utilities
 - [ ] Hooking Helper: Create a Python utility that simplifies C-based function hooking. The tool could accept C source code and a Makefile path, then automatically build the shared object and manage the LD_PRELOAD environment variable for the target process.
+
+## Basic Usage
+
+Run the scaffolding entry point to start the fuzzer:
+
+```bash
+python3 main.py --target /path/to/binary --iterations 1000
+```
+
+This main script is minimal and will evolve alongside the project's features.
