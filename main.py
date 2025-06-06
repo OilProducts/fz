@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import subprocess
+import tempfile
 
 class Fuzzer:
     """Base fuzzer scaffold."""
@@ -9,25 +10,38 @@ class Fuzzer:
     def __init__(self):
         pass
 
-    def _run_once(self, target, data, timeout):
+    def _run_once(self, target, data, timeout, file_input=False):
         """Execute target with the provided input data."""
         try:
-            result = subprocess.run(
-                [target], input=data, capture_output=True, timeout=timeout
-            )
+            if file_input:
+                with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                    tmp.write(data)
+                    tmp.flush()
+                    filename = tmp.name
+                try:
+                    result = subprocess.run(
+                        [target, filename], capture_output=True, timeout=timeout
+                    )
+                finally:
+                    os.unlink(filename)
+            else:
+                result = subprocess.run(
+                    [target], input=data, capture_output=True, timeout=timeout
+                )
             logging.debug("Return code: %d", result.returncode)
         except subprocess.TimeoutExpired:
             logging.warning("Execution timed out")
 
     def run(self, args):
-        logging.info("Running stdin fuzzer")
+        mode = "file" if args.file_input else "stdin"
+        logging.info("Running %s fuzzer", mode)
         logging.info("Target: %s", args.target)
         logging.info("Iterations: %d", args.iterations)
 
         for i in range(args.iterations):
             data = os.urandom(args.input_size)
             logging.debug("Iteration %d sending %d bytes", i, len(data))
-            self._run_once(args.target, data, args.timeout)
+            self._run_once(args.target, data, args.timeout, args.file_input)
 
 
 def parse_args():
@@ -45,6 +59,11 @@ def parse_args():
         type=float,
         default=1.0,
         help="Seconds to wait for the target before killing it",
+    )
+    parser.add_argument(
+        "--file-input",
+        action="store_true",
+        help="Write input to a temporary file and pass its path to the target",
     )
     return parser.parse_args()
 

@@ -76,10 +76,18 @@ This phase focuses on analyzing the collected data to identify unique and intere
 ## Basic Usage
 
 Run the scaffolding entry point to start the fuzzer. The fuzzer sends random
-bytes to the target's standard input on each iteration:
+bytes to the target's standard input on each iteration by default. Use
+`--file-input` to supply the bytes via a temporary file passed as an argument
+to the target:
 
 ```bash
 python3 main.py --target /path/to/binary --iterations 1000 --input-size 64
+```
+
+To send input via a file instead of stdin:
+
+```bash
+python3 main.py --target /path/to/binary --iterations 1000 --file-input
 ```
 
 This main script is minimal and will evolve alongside the project's features.
