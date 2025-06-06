@@ -4,33 +4,48 @@ import os
 import subprocess
 import tempfile
 
-class Fuzzer:
-    """Base fuzzer scaffold."""
+import coverage
+from corpus import Corpus
 
-    def __init__(self):
-        pass
+class Fuzzer:
+    """Base fuzzer scaffold with simple coverage tracking."""
+
+    def __init__(self, corpus_dir="corpus"):
+        self.corpus = Corpus(corpus_dir)
 
     def _run_once(self, target, data, timeout, file_input=False):
-        """Execute target with the provided input data."""
+        """Execute target with the provided input data and record coverage."""
+        coverage_set = set()
         try:
             if file_input:
                 with tempfile.NamedTemporaryFile(delete=False) as tmp:
                     tmp.write(data)
                     tmp.flush()
                     filename = tmp.name
-                try:
-                    result = subprocess.run(
-                        [target, filename], capture_output=True, timeout=timeout
-                    )
-                finally:
-                    os.unlink(filename)
+                argv = [target, filename]
             else:
-                result = subprocess.run(
-                    [target], input=data, capture_output=True, timeout=timeout
-                )
-            logging.debug("Return code: %d", result.returncode)
-        except subprocess.TimeoutExpired:
-            logging.warning("Execution timed out")
+                argv = [target]
+
+            proc = subprocess.Popen(
+                argv,
+                stdin=subprocess.PIPE if not file_input else None,
+            )
+
+            if not file_input and proc.stdin:
+                proc.stdin.write(data)
+                proc.stdin.close()
+
+            coverage_set = coverage.collect_coverage(proc.pid)
+            try:
+                proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                logging.warning("Execution timed out")
+        finally:
+            if file_input:
+                os.unlink(filename)
+
+        self.corpus.save_if_interesting(data, coverage_set)
 
     def run(self, args):
         mode = "file" if args.file_input else "stdin"
@@ -65,13 +80,18 @@ def parse_args():
         action="store_true",
         help="Write input to a temporary file and pass its path to the target",
     )
+    parser.add_argument(
+        "--corpus-dir",
+        default="corpus",
+        help="Directory to store interesting test cases",
+    )
     return parser.parse_args()
 
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     args = parse_args()
-    fuzzer = Fuzzer()
+    fuzzer = Fuzzer(args.corpus_dir)
     fuzzer.run(args)
 
 
