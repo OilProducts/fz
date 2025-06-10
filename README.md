@@ -77,17 +77,17 @@ This phase focuses on analyzing the collected data to identify unique and intere
 
 Run the scaffolding entry point to start the fuzzer. The fuzzer sends random
 bytes to the target's standard input on each iteration by default. Use
-`--file-input` to supply the bytes via a temporary file passed as an argument
+`file` subcommand to supply the bytes via a temporary file passed as an argument
 to the target:
 
 ```bash
 python3 main.py --target /path/to/binary --iterations 1000 --input-size 64
 ```
 
-To send input via a file instead of stdin:
+To send input via a file instead of stdin use the `file` subcommand:
 
 ```bash
-python3 main.py --target /path/to/binary --iterations 1000 --file-input
+python3 main.py file --target /path/to/binary --iterations 1000
 ```
 
 Coverage is gathered automatically using `ptrace`. Inputs that execute new
@@ -106,13 +106,11 @@ The fuzzer can also target network servers. Provide the host and port of the
 service and whether to use TCP or UDP:
 
 ```bash
-python3 main.py --target /path/to/server \
-    --tcp-host 127.0.0.1 --tcp-port 9999 --iterations 100
+python3 main.py tcp 127.0.0.1 9999 --target /path/to/server --iterations 100
 ```
 
 For UDP services:
 
 ```bash
-python3 main.py --target /path/to/server \
-    --udp-host 127.0.0.1 --udp-port 9999 --iterations 100
+python3 main.py udp 127.0.0.1 9999 --target /path/to/server --iterations 100
 ```

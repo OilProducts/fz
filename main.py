@@ -88,20 +88,40 @@ def parse_args():
         help="Seconds to wait for the target before killing it",
     )
     parser.add_argument(
-        "--file-input",
-        action="store_true",
-        help="Write input to a temporary file and pass its path to the target",
-    )
-    parser.add_argument(
         "--corpus-dir",
         default="corpus",
         help="Directory to store interesting test cases",
     )
-    parser.add_argument("--tcp-host", help="Host to connect to via TCP")
-    parser.add_argument("--tcp-port", type=int, help="Port for TCP connection")
-    parser.add_argument("--udp-host", help="Host to send UDP packets to")
-    parser.add_argument("--udp-port", type=int, help="Port for UDP packets")
-    return parser.parse_args()
+
+    subparsers = parser.add_subparsers(dest="mode", help="Input method")
+
+    file_p = subparsers.add_parser(
+        "file", help="Write input to a temporary file and pass its path to the target"
+    )
+    file_p.set_defaults(file_input=True)
+
+    tcp_p = subparsers.add_parser("tcp", help="Send input over TCP to a service")
+    tcp_p.add_argument("tcp_host", help="Host to connect to via TCP")
+    tcp_p.add_argument("tcp_port", type=int, help="Port for TCP connection")
+
+    udp_p = subparsers.add_parser("udp", help="Send input over UDP to a service")
+    udp_p.add_argument("udp_host", help="Host to send UDP packets to")
+    udp_p.add_argument("udp_port", type=int, help="Port for UDP packets")
+
+    args = parser.parse_args()
+
+    if getattr(args, "mode", None) != "file":
+        args.file_input = False
+
+    if args.mode != "tcp":
+        args.tcp_host = None
+        args.tcp_port = None
+
+    if args.mode != "udp":
+        args.udp_host = None
+        args.udp_port = None
+
+    return args
 
 
 def main():
