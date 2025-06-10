@@ -93,24 +93,32 @@ class Fuzzer:
             mode = "udp"
         logging.info("Running %s fuzzer", mode)
         logging.info("Target: %s", args.target)
-        logging.info("Iterations: %d", args.iterations)
+        iter_desc = "infinite" if args.run_forever else str(args.iterations)
+        logging.info("Iterations: %s", iter_desc)
 
         start_time = time.time()
-        for i in range(args.iterations):
-            data = os.urandom(args.input_size)
-            logging.debug("Iteration %d sending %d bytes", i, len(data))
-            self._run_once(args.target, data, args.timeout, args.file_input, harness)
+        i = 0
+        try:
+            while True:
+                data = os.urandom(args.input_size)
+                logging.debug("Iteration %d sending %d bytes", i, len(data))
+                self._run_once(args.target, data, args.timeout, args.file_input, harness)
+                i += 1
+                if not args.run_forever and i >= args.iterations:
+                    break
+        except KeyboardInterrupt:
+            logging.info("Fuzzing interrupted by user")
         duration = time.time() - start_time
         if duration > 0:
-            rate = args.iterations / duration
+            rate = i / duration
             logging.info(
                 "Executed %d iterations in %.2f seconds (%.2f/sec)",
-                args.iterations,
+                i,
                 duration,
                 rate,
             )
         else:
-            logging.info("Executed %d iterations", args.iterations)
+            logging.info("Executed %d iterations", i)
 
 
 def parse_args():
@@ -131,6 +139,11 @@ def parse_args():
     )
     parser.add_argument("--target", required=True, help="Path to target binary or script")
     parser.add_argument("--iterations", type=int, default=1, help="Number of test iterations to run")
+    parser.add_argument(
+        "--run-forever",
+        action="store_true",
+        help="Run indefinitely until interrupted",
+    )
     parser.add_argument(
         "--input-size",
         type=int,
