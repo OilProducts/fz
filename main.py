@@ -131,6 +131,11 @@ def parse_args():
         default="corpus",
         help="Directory to store interesting test cases",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
+    )
 
     # Verify config keys match existing parser options and set them as defaults
     if config_data:
@@ -149,8 +154,9 @@ def parse_args():
 
 
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     args = parse_args()
+    level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
     fuzzer = Fuzzer(args.corpus_dir)
     fuzzer.run(args)
 
