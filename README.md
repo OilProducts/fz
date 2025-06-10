@@ -106,16 +106,17 @@ The fuzzer can also target network servers. Provide the host and port of the
 service and whether to use TCP or UDP:
 
 ```bash
-python3 main.py --target /path/to/server \
-    --tcp-host 127.0.0.1 --tcp-port 9999 --iterations 100
+python3 main.py --target /path/to/server --tcp 127.0.0.1 9999 --iterations 100
 ```
 
 For UDP services:
 
 ```bash
-python3 main.py --target /path/to/server \
-    --udp-host 127.0.0.1 --udp-port 9999 --iterations 100
+python3 main.py --target /path/to/server --udp 127.0.0.1 9999 --iterations 100
 ```
+
+TCP and UDP modes are mutually exclusive, and neither can be used together with
+`--file-input`. Each mode requires both a host and port.
 
 ## Using a Configuration File
 
