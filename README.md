@@ -105,9 +105,11 @@ python3 main.py --target /path/to/binary --iterations 100 --parallel 4
 Coverage is gathered automatically using `ptrace`. The addresses recorded are
 normalized to the binary's load base so identical inputs yield identical
 coverage sets across runs. Inputs that execute new basic blocks are stored in
-the corpus directory. Use `--corpus-dir` to change
-where these inputs are saved. Basic block coverage via breakpoints is always
-enabled.
+the corpus directory. Each saved input is written to `<hash>.bin` and a
+corresponding `<hash>.json` metadata file contains the sequence of executed
+basic blocks. Existing corpus files are loaded automatically so coverage
+from previous runs is preserved. Use `--corpus-dir` to change where these
+inputs are saved. Basic block coverage via breakpoints is always enabled.
 
 ```bash
 python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out

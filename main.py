@@ -23,10 +23,13 @@ class Fuzzer:
     def _run_once(self, target, data, timeout, file_input=False, network=None):
         """Execute target once and record coverage."""
         coverage_set = set()
+        trace = []
         if network:
-            coverage_set = network.run(target, data, timeout)
-            logging.debug("Network run returned %d coverage entries", len(coverage_set))
-            self.corpus.save_if_interesting(data, coverage_set)
+            coverage_set, trace = network.run(target, data, timeout)
+            logging.debug(
+                "Network run returned %d coverage entries", len(coverage_set)
+            )
+            self.corpus.save_if_interesting(data, coverage_set, trace)
             return
         try:
             if file_input:
@@ -57,18 +60,24 @@ class Fuzzer:
 
             logging.debug("Collecting coverage from pid %d", proc.pid)
             try:
-                coverage_set = coverage.collect_coverage(proc.pid, timeout)
+                coverage_set, trace = coverage.collect_coverage(proc.pid, timeout)
             except FileNotFoundError:
                 logging.debug(
                     "Process %d exited before coverage collection", proc.pid
                 )
                 coverage_set = set()
+                trace = []
             except OSError as e:
                 logging.debug(
                     "Failed to collect coverage from pid %d: %s", proc.pid, e
                 )
                 coverage_set = set()
-            logging.debug("Collected %d coverage entries", len(coverage_set))
+                trace = []
+            logging.debug(
+                "Collected %d coverage entries with %d trace entries",
+                len(coverage_set),
+                len(trace),
+            )
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -78,7 +87,7 @@ class Fuzzer:
             if file_input:
                 os.unlink(filename)
 
-        self.corpus.save_if_interesting(data, coverage_set)
+        self.corpus.save_if_interesting(data, coverage_set, trace)
 
     def _fuzz_loop(self, args):
         mode = "file" if args.file_input else "stdin"

@@ -38,8 +38,12 @@ class NetworkHarness:
             logging.debug("Sending %d bytes", len(data))
             sock.sendall(data)
             sock.close()
-            coverage_set = coverage.collect_coverage(proc.pid, timeout)
-            logging.debug("Collected %d coverage entries", len(coverage_set))
+            coverage_set, trace = coverage.collect_coverage(proc.pid, timeout)
+            logging.debug(
+                "Collected %d coverage entries with %d trace entries",
+                len(coverage_set),
+                len(trace),
+            )
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -48,5 +52,7 @@ class NetworkHarness:
         finally:
             if proc.poll() is None:
                 proc.kill()
-        logging.debug("Network run complete with %d coverage entries", len(coverage_set))
-        return coverage_set
+        logging.debug(
+            "Network run complete with %d coverage entries", len(coverage_set)
+        )
+        return coverage_set, trace

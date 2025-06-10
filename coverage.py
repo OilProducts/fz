@@ -147,6 +147,7 @@ def collect_coverage(pid, timeout=1.0):
     """Record executed basic blocks from a running process."""
     logging.debug("Collecting coverage for pid %d", pid)
     coverage = set()
+    trace = []
     _ptrace(PTRACE_ATTACH, pid)
     os.waitpid(pid, 0)
     logging.debug("Attached to pid %d", pid)
@@ -188,7 +189,9 @@ def collect_coverage(pid, timeout=1.0):
             _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
             addr = regs.rip - 1
             if addr in breakpoints:
-                coverage.add(addr - base)
+                rel_addr = addr - base
+                coverage.add(rel_addr)
+                trace.append(rel_addr)
                 logging.debug("Hit breakpoint at %#x", addr)
                 orig = breakpoints.pop(addr)
                 _ptrace_poke(pid, addr, orig)
@@ -209,4 +212,4 @@ def collect_coverage(pid, timeout=1.0):
     except OSError:
         pass
     logging.debug("Collected %d basic blocks", len(coverage))
-    return coverage
+    return coverage, trace
