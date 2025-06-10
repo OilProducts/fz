@@ -17,9 +17,8 @@ from network_harness import NetworkHarness
 class Fuzzer:
     """Base fuzzer scaffold with simple coverage tracking."""
 
-    def __init__(self, corpus_dir="corpus", block_coverage=False):
+    def __init__(self, corpus_dir="corpus"):
         self.corpus = Corpus(corpus_dir)
-        self.block_coverage = block_coverage
 
     def _run_once(self, target, data, timeout, file_input=False, network=None):
         """Execute target once and record coverage."""
@@ -57,7 +56,7 @@ class Fuzzer:
                         logging.debug("Broken pipe when closing stdin")
 
             logging.debug("Collecting coverage from pid %d", proc.pid)
-            coverage_set = coverage.collect_coverage(proc.pid, self.block_coverage)
+            coverage_set = coverage.collect_coverage(proc.pid)
             logging.debug("Collected %d coverage entries", len(coverage_set))
             try:
                 proc.wait(timeout=timeout)
@@ -75,11 +74,11 @@ class Fuzzer:
         harness = None
         if args.tcp:
             host, port = args.tcp
-            harness = NetworkHarness(host, int(port), udp=False, block_coverage=self.block_coverage)
+            harness = NetworkHarness(host, int(port), udp=False)
             mode = "tcp"
         elif args.udp:
             host, port = args.udp
-            harness = NetworkHarness(host, int(port), udp=True, block_coverage=self.block_coverage)
+            harness = NetworkHarness(host, int(port), udp=True)
             mode = "udp"
         logging.info("Running %s fuzzer", mode)
         logging.info("Target: %s", args.target)
@@ -157,11 +156,6 @@ def parse_args():
         help="Directory to store interesting test cases",
     )
     parser.add_argument(
-        "--block-coverage",
-        action="store_true",
-        help="Use breakpoint-based basic block coverage",
-    )
-    parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging",
@@ -187,7 +181,7 @@ def main():
     args = parse_args()
     level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
-    fuzzer = Fuzzer(args.corpus_dir, block_coverage=args.block_coverage)
+    fuzzer = Fuzzer(args.corpus_dir)
     fuzzer.run(args)
 
 

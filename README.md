@@ -94,11 +94,11 @@ Coverage is gathered automatically using `ptrace`. The addresses recorded are
 normalized to the binary's load base so identical inputs yield identical
 coverage sets across runs. Inputs that execute new basic blocks are stored in
 the corpus directory. Use `--corpus-dir` to change
-where these inputs are saved. For faster coverage, enable breakpoint-based
-basic block tracking with `--block-coverage`:
+where these inputs are saved. Basic block coverage via breakpoints is always
+enabled.
 
 ```bash
-python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out --block-coverage
+python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out
 ```
 
 This main script is minimal and will evolve alongside the project's features.

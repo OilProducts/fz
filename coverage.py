@@ -140,8 +140,8 @@ def _ptrace_poke(pid, addr, data):
     return res
 
 
-def collect_coverage(pid, block_coverage=False):
-    """Record executed instructions or basic blocks from a running process."""
+def collect_coverage(pid):
+    """Record executed basic blocks from a running process."""
     logging.debug("Collecting coverage for pid %d", pid)
     coverage = set()
     _ptrace(PTRACE_ATTACH, pid)
@@ -151,30 +151,6 @@ def collect_coverage(pid, block_coverage=False):
     exe = os.readlink(f"/proc/{pid}/exe")
     base = _get_image_base(pid, exe)
     logging.debug("%s loaded at %#x", exe, base)
-
-    if not block_coverage:
-        regs = user_regs_struct()
-        while True:
-            try:
-                _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
-                coverage.add(regs.rip - base)
-                logging.debug("Executed instruction at %#x", regs.rip)
-            except OSError:
-                break
-            try:
-                _ptrace(PTRACE_SINGLESTEP, pid)
-            except OSError:
-                break
-            wpid, status = os.waitpid(pid, 0)
-            if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-                break
-        try:
-            _ptrace(PTRACE_DETACH, pid)
-            logging.debug("Detached from pid %d", pid)
-        except OSError:
-            pass
-        logging.debug("Collected %d instruction addresses", len(coverage))
-        return coverage
 
     logging.debug("Inserting breakpoints for block coverage on %s", exe)
     blocks = _get_basic_blocks(exe)
