@@ -178,7 +178,7 @@ def collect_coverage(pid, timeout=1.0):
             break
         if wpid == 0:
             if time.time() > end_time:
-                logging.debug("Coverage wait timed out")
+                logging.info("Coverage wait timed out")
                 break
             time.sleep(0.01)
             continue
