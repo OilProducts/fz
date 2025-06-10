@@ -80,7 +80,7 @@ class Fuzzer:
 
         self.corpus.save_if_interesting(data, coverage_set)
 
-    def run(self, args):
+    def _fuzz_loop(self, args):
         mode = "file" if args.file_input else "stdin"
         harness = None
         if args.tcp:
@@ -120,6 +120,26 @@ class Fuzzer:
         else:
             logging.info("Executed %d iterations", i)
 
+    def run(self, args):
+        if args.parallel > 1:
+            import multiprocessing
+
+            processes = []
+            for _ in range(args.parallel):
+                p = multiprocessing.Process(target=_worker, args=(args,))
+                p.start()
+                processes.append(p)
+            for p in processes:
+                p.join()
+            return
+
+        self._fuzz_loop(args)
+
+
+def _worker(args):
+    fuzzer = Fuzzer(args.corpus_dir)
+    fuzzer._fuzz_loop(args)
+
 
 def parse_args():
     # First parse only the --config argument so we can load defaults from file
@@ -155,6 +175,12 @@ def parse_args():
         type=float,
         default=1.0,
         help="Seconds to wait for the target before killing it",
+    )
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="Number of parallel fuzzing processes",
     )
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(

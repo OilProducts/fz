@@ -96,6 +96,12 @@ To fuzz continuously until interrupted, use `--run-forever`:
 python3 main.py --target /path/to/binary --run-forever
 ```
 
+To run multiple fuzzing processes concurrently, use `--parallel`:
+
+```bash
+python3 main.py --target /path/to/binary --iterations 100 --parallel 4
+```
+
 Coverage is gathered automatically using `ptrace`. The addresses recorded are
 normalized to the binary's load base so identical inputs yield identical
 coverage sets across runs. Inputs that execute new basic blocks are stored in
