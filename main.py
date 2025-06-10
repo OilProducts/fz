@@ -26,6 +26,7 @@ class Fuzzer:
         coverage_set = set()
         if network:
             coverage_set = network.run(target, data, timeout)
+            logging.debug("Network run returned %d coverage entries", len(coverage_set))
             self.corpus.save_if_interesting(data, coverage_set)
             return
         try:
@@ -50,6 +51,7 @@ class Fuzzer:
 
             logging.debug("Collecting coverage from pid %d", proc.pid)
             coverage_set = coverage.collect_coverage(proc.pid, self.block_coverage)
+            logging.debug("Collected %d coverage entries", len(coverage_set))
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:

@@ -57,12 +57,16 @@ _block_cache = {}
 
 
 def _get_basic_blocks(exe):
+    """Return a sorted list of basic block addresses for *exe*."""
     if exe in _block_cache:
+        logging.debug("Using cached basic blocks for %s", exe)
         return _block_cache[exe]
 
+    logging.debug("Parsing basic blocks from %s", exe)
     try:
         output = subprocess.check_output(["objdump", "-d", exe], text=True)
-    except Exception:
+    except Exception as e:
+        logging.debug("Failed to disassemble %s: %s", exe, e)
         _block_cache[exe] = []
         return _block_cache[exe]
 
@@ -79,9 +83,18 @@ def _get_basic_blocks(exe):
         prev_branch = bool(branch_re.search(line))
 
     _block_cache[exe] = sorted(blocks)
+    logging.debug("Identified %d basic blocks in %s", len(blocks), exe)
     return _block_cache[exe]
 
 def _ptrace(request, pid, addr=0, data=0):
+    """Wrapper around libc.ptrace with basic error handling."""
+    logging.debug(
+        "ptrace request=%d pid=%d addr=%#x data=%#x",
+        request,
+        pid,
+        addr,
+        data,
+    )
     res = libc.ptrace(request, pid, ctypes.c_void_p(addr), ctypes.c_void_p(data))
     if res != 0:
         err = ctypes.get_errno()
@@ -90,6 +103,7 @@ def _ptrace(request, pid, addr=0, data=0):
 
 
 def _ptrace_peek(pid, addr):
+    logging.debug("peek pid=%d addr=%#x", pid, addr)
     res = libc.ptrace(PTRACE_PEEKTEXT, pid, ctypes.c_void_p(addr), None)
     if res == -1:
         err = ctypes.get_errno()
@@ -99,6 +113,7 @@ def _ptrace_peek(pid, addr):
 
 
 def _ptrace_poke(pid, addr, data):
+    logging.debug("poke pid=%d addr=%#x data=%#x", pid, addr, data)
     res = libc.ptrace(PTRACE_POKETEXT, pid, ctypes.c_void_p(addr), ctypes.c_void_p(data))
     if res != 0:
         err = ctypes.get_errno()
@@ -112,6 +127,7 @@ def collect_coverage(pid, block_coverage=False):
     coverage = set()
     _ptrace(PTRACE_ATTACH, pid)
     os.waitpid(pid, 0)
+    logging.debug("Attached to pid %d", pid)
 
     if not block_coverage:
         regs = user_regs_struct()
@@ -119,6 +135,7 @@ def collect_coverage(pid, block_coverage=False):
             try:
                 _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
                 coverage.add(regs.rip)
+                logging.debug("Executed instruction at %#x", regs.rip)
             except OSError:
                 break
             try:
@@ -130,6 +147,7 @@ def collect_coverage(pid, block_coverage=False):
                 break
         try:
             _ptrace(PTRACE_DETACH, pid)
+            logging.debug("Detached from pid %d", pid)
         except OSError:
             pass
         logging.debug("Collected %d instruction addresses", len(coverage))
@@ -144,6 +162,7 @@ def collect_coverage(pid, block_coverage=False):
             orig = _ptrace_peek(pid, b)
             breakpoints[b] = orig
             _ptrace_poke(pid, b, (orig & ~0xFF) | 0xCC)
+            logging.debug("Breakpoint inserted at %#x", b)
         except OSError:
             continue
 
@@ -158,6 +177,7 @@ def collect_coverage(pid, block_coverage=False):
             addr = regs.rip - 1
             if addr in breakpoints:
                 coverage.add(addr)
+                logging.debug("Hit breakpoint at %#x", addr)
                 orig = breakpoints.pop(addr)
                 _ptrace_poke(pid, addr, orig)
                 regs.rip = addr
@@ -173,6 +193,7 @@ def collect_coverage(pid, block_coverage=False):
             except OSError:
                 pass
         _ptrace(PTRACE_DETACH, pid)
+        logging.debug("Detached from pid %d", pid)
     except OSError:
         pass
     logging.debug("Collected %d basic blocks", len(coverage))
