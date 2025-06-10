@@ -5,6 +5,7 @@ import os
 import re
 import signal
 import subprocess
+import time
 
 
 libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
@@ -140,7 +141,7 @@ def _ptrace_poke(pid, addr, data):
     return res
 
 
-def collect_coverage(pid):
+def collect_coverage(pid, timeout=1.0):
     """Record executed basic blocks from a running process."""
     logging.debug("Collecting coverage for pid %d", pid)
     coverage = set()
@@ -167,8 +168,18 @@ def collect_coverage(pid):
 
     _ptrace(PTRACE_CONT, pid)
     regs = user_regs_struct()
+    end_time = time.time() + timeout
     while True:
-        wpid, status = os.waitpid(pid, 0)
+        try:
+            wpid, status = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            break
+        if wpid == 0:
+            if time.time() > end_time:
+                logging.debug("Coverage wait timed out")
+                break
+            time.sleep(0.01)
+            continue
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             break
         if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:

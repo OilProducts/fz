@@ -56,7 +56,18 @@ class Fuzzer:
                         logging.debug("Broken pipe when closing stdin")
 
             logging.debug("Collecting coverage from pid %d", proc.pid)
-            coverage_set = coverage.collect_coverage(proc.pid)
+            try:
+                coverage_set = coverage.collect_coverage(proc.pid, timeout)
+            except FileNotFoundError:
+                logging.debug(
+                    "Process %d exited before coverage collection", proc.pid
+                )
+                coverage_set = set()
+            except OSError as e:
+                logging.debug(
+                    "Failed to collect coverage from pid %d: %s", proc.pid, e
+                )
+                coverage_set = set()
             logging.debug("Collected %d coverage entries", len(coverage_set))
             try:
                 proc.wait(timeout=timeout)
