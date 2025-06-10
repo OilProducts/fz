@@ -25,6 +25,7 @@ This phase builds the foundational framework for targeting and monitoring applic
 - Target Environment Support
 
   - [ ] Initial Architecture (x86): Implement core functionality for the x86 architecture, establishing a modular design for future expansion to ARM, MIPS, and ARM64.
+  - [x] ARM64 Support: Coverage instrumentation now works on aarch64 Linux systems.
 
   - [ ] Libc Variants: Start with statically compiled binaries, then expand to handle dynamically linked targets using glibc, uclibc, and musl.
 

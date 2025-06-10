@@ -2,6 +2,7 @@ import ctypes
 import ctypes.util
 import logging
 import os
+import platform
 import re
 import signal
 import subprocess
@@ -19,42 +20,70 @@ PTRACE_PEEKTEXT = 1
 PTRACE_POKETEXT = 4
 PTRACE_SETREGS = 13
 
-class user_regs_struct(ctypes.Structure):
-    _fields_ = [
-        ("r15", ctypes.c_ulonglong),
-        ("r14", ctypes.c_ulonglong),
-        ("r13", ctypes.c_ulonglong),
-        ("r12", ctypes.c_ulonglong),
-        ("rbp", ctypes.c_ulonglong),
-        ("rbx", ctypes.c_ulonglong),
-        ("r11", ctypes.c_ulonglong),
-        ("r10", ctypes.c_ulonglong),
-        ("r9", ctypes.c_ulonglong),
-        ("r8", ctypes.c_ulonglong),
-        ("rax", ctypes.c_ulonglong),
-        ("rcx", ctypes.c_ulonglong),
-        ("rdx", ctypes.c_ulonglong),
-        ("rsi", ctypes.c_ulonglong),
-        ("rdi", ctypes.c_ulonglong),
-        ("orig_rax", ctypes.c_ulonglong),
-        ("rip", ctypes.c_ulonglong),
-        ("cs", ctypes.c_ulonglong),
-        ("eflags", ctypes.c_ulonglong),
-        ("rsp", ctypes.c_ulonglong),
-        ("ss", ctypes.c_ulonglong),
-        ("fs_base", ctypes.c_ulonglong),
-        ("gs_base", ctypes.c_ulonglong),
-        ("ds", ctypes.c_ulonglong),
-        ("es", ctypes.c_ulonglong),
-        ("fs", ctypes.c_ulonglong),
-        ("gs", ctypes.c_ulonglong),
-    ]
+ARCH = platform.machine().lower()
+
+if ARCH in ("aarch64", "arm64"):
+    BREAKPOINT = 0xD4200000  # "brk #0" instruction
+
+    class user_regs_struct(ctypes.Structure):
+        _fields_ = [
+            ("regs", ctypes.c_ulonglong * 31),
+            ("sp", ctypes.c_ulonglong),
+            ("pc", ctypes.c_ulonglong),
+            ("pstate", ctypes.c_ulonglong),
+        ]
+
+    def get_pc(regs):
+        return regs.pc
+
+    def set_pc(regs, value):
+        regs.pc = value
+else:
+    BREAKPOINT = 0xCC  # INT3
+
+    class user_regs_struct(ctypes.Structure):
+        _fields_ = [
+            ("r15", ctypes.c_ulonglong),
+            ("r14", ctypes.c_ulonglong),
+            ("r13", ctypes.c_ulonglong),
+            ("r12", ctypes.c_ulonglong),
+            ("rbp", ctypes.c_ulonglong),
+            ("rbx", ctypes.c_ulonglong),
+            ("r11", ctypes.c_ulonglong),
+            ("r10", ctypes.c_ulonglong),
+            ("r9", ctypes.c_ulonglong),
+            ("r8", ctypes.c_ulonglong),
+            ("rax", ctypes.c_ulonglong),
+            ("rcx", ctypes.c_ulonglong),
+            ("rdx", ctypes.c_ulonglong),
+            ("rsi", ctypes.c_ulonglong),
+            ("rdi", ctypes.c_ulonglong),
+            ("orig_rax", ctypes.c_ulonglong),
+            ("rip", ctypes.c_ulonglong),
+            ("cs", ctypes.c_ulonglong),
+            ("eflags", ctypes.c_ulonglong),
+            ("rsp", ctypes.c_ulonglong),
+            ("ss", ctypes.c_ulonglong),
+            ("fs_base", ctypes.c_ulonglong),
+            ("gs_base", ctypes.c_ulonglong),
+            ("ds", ctypes.c_ulonglong),
+            ("es", ctypes.c_ulonglong),
+            ("fs", ctypes.c_ulonglong),
+            ("gs", ctypes.c_ulonglong),
+        ]
+
+    def get_pc(regs):
+        return regs.rip
+
+    def set_pc(regs, value):
+        regs.rip = value
 
 
 libc.ptrace.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
 libc.ptrace.restype = ctypes.c_long
 
 _block_cache = {}
+word_cache = {}
 
 
 def _get_image_base(pid, exe):
@@ -161,9 +190,27 @@ def collect_coverage(pid, timeout=1.0):
     breakpoints = {}
     for b in blocks:
         try:
-            orig = _ptrace_peek(pid, b)
-            breakpoints[b] = orig
-            _ptrace_poke(pid, b, (orig & ~0xFF) | 0xCC)
+            if ARCH in ("aarch64", "arm64"):
+                word_addr = b & ~7
+                offset = b & 7
+                if word_addr not in word_cache:
+                    orig_word = _ptrace_peek(pid, word_addr)
+                    patched_word = orig_word
+                    patches = set()
+                else:
+                    orig_word, patched_word, patches = word_cache[word_addr]
+                if offset == 0:
+                    patched_word = (patched_word & ~0xFFFFFFFF) | BREAKPOINT
+                else:
+                    patched_word = (patched_word & 0xFFFFFFFF) | (BREAKPOINT << 32)
+                _ptrace_poke(pid, word_addr, patched_word)
+                patches.add(offset)
+                word_cache[word_addr] = (orig_word, patched_word, patches)
+                breakpoints[b] = (word_addr, offset)
+            else:
+                orig = _ptrace_peek(pid, b)
+                breakpoints[b] = orig
+                _ptrace_poke(pid, b, (orig & ~0xFF) | BREAKPOINT)
             logging.debug("Breakpoint inserted at %#x", b)
         except OSError:
             continue
@@ -186,22 +233,54 @@ def collect_coverage(pid, timeout=1.0):
             break
         if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:
             _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
-            addr = regs.rip - 1
+            pc = get_pc(regs)
+            addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
             if addr in breakpoints:
                 coverage.add(addr - base)
                 logging.debug("Hit breakpoint at %#x", addr)
-                orig = breakpoints.pop(addr)
-                _ptrace_poke(pid, addr, orig)
-                regs.rip = addr
+                info = breakpoints.pop(addr)
+                if ARCH in ("aarch64", "arm64"):
+                    word_addr, offset = info
+                    orig_word, patched_word, patches = word_cache[word_addr]
+                    if offset == 0:
+                        patched_word = (patched_word & ~0xFFFFFFFF) | (orig_word & 0xFFFFFFFF)
+                    else:
+                        patched_word = (patched_word & 0xFFFFFFFF) | (orig_word & 0xFFFFFFFF00000000)
+                    patches.discard(offset)
+                    if not patches:
+                        _ptrace_poke(pid, word_addr, orig_word)
+                        del word_cache[word_addr]
+                    else:
+                        _ptrace_poke(pid, word_addr, patched_word)
+                        word_cache[word_addr] = (orig_word, patched_word, patches)
+                    set_pc(regs, addr)
+                else:
+                    _ptrace_poke(pid, addr, info)
+                    set_pc(regs, addr)
                 _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
                 _ptrace(PTRACE_SINGLESTEP, pid)
                 os.waitpid(pid, 0)
             _ptrace(PTRACE_CONT, pid)
 
     try:
-        for addr, orig in breakpoints.items():
+        for addr, info in breakpoints.items():
             try:
-                _ptrace_poke(pid, addr, orig)
+                if ARCH in ("aarch64", "arm64"):
+                    word_addr, offset = info
+                    orig_word, patched_word, patches = word_cache.get(word_addr, (0, 0, set()))
+                    if offset == 0:
+                        patched_word = (patched_word & ~0xFFFFFFFF) | (orig_word & 0xFFFFFFFF)
+                    else:
+                        patched_word = (patched_word & 0xFFFFFFFF) | (orig_word & 0xFFFFFFFF00000000)
+                    patches.discard(offset)
+                    if not patches:
+                        _ptrace_poke(pid, word_addr, orig_word)
+                        word_cache.pop(word_addr, None)
+                    else:
+                        _ptrace_poke(pid, word_addr, patched_word)
+                        word_cache[word_addr] = (orig_word, patched_word, patches)
+                else:
+                    _ptrace_poke(pid, addr, info)
             except OSError:
                 pass
         _ptrace(PTRACE_DETACH, pid)
