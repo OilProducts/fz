@@ -1,6 +1,10 @@
 import ctypes
 import ctypes.util
 import os
+import re
+import signal
+import subprocess
+
 
 libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
 
@@ -9,6 +13,9 @@ PTRACE_DETACH = 17
 PTRACE_CONT = 7
 PTRACE_SINGLESTEP = 9
 PTRACE_GETREGS = 12
+PTRACE_PEEKTEXT = 1
+PTRACE_POKETEXT = 4
+PTRACE_SETREGS = 13
 
 class user_regs_struct(ctypes.Structure):
     _fields_ = [
@@ -45,6 +52,34 @@ class user_regs_struct(ctypes.Structure):
 libc.ptrace.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
 libc.ptrace.restype = ctypes.c_long
 
+_block_cache = {}
+
+
+def _get_basic_blocks(exe):
+    if exe in _block_cache:
+        return _block_cache[exe]
+
+    try:
+        output = subprocess.check_output(["objdump", "-d", exe], text=True)
+    except Exception:
+        _block_cache[exe] = []
+        return _block_cache[exe]
+
+    blocks = set()
+    prev_branch = True
+    branch_re = re.compile(r"\b(j\w+|call|ret|syscall)\b")
+    for line in output.splitlines():
+        m = re.match(r"\s*([0-9a-fA-F]+):", line)
+        if not m:
+            continue
+        addr = int(m.group(1), 16)
+        if prev_branch:
+            blocks.add(addr)
+        prev_branch = bool(branch_re.search(line))
+
+    _block_cache[exe] = sorted(blocks)
+    return _block_cache[exe]
+
 def _ptrace(request, pid, addr=0, data=0):
     res = libc.ptrace(request, pid, ctypes.c_void_p(addr), ctypes.c_void_p(data))
     if res != 0:
@@ -53,26 +88,86 @@ def _ptrace(request, pid, addr=0, data=0):
     return res
 
 
-def collect_coverage(pid):
-    """Attach to an existing process and record executed instruction pointers."""
+def _ptrace_peek(pid, addr):
+    res = libc.ptrace(PTRACE_PEEKTEXT, pid, ctypes.c_void_p(addr), None)
+    if res == -1:
+        err = ctypes.get_errno()
+        if err != 0:
+            raise OSError(err, os.strerror(err))
+    return res
+
+
+def _ptrace_poke(pid, addr, data):
+    res = libc.ptrace(PTRACE_POKETEXT, pid, ctypes.c_void_p(addr), ctypes.c_void_p(data))
+    if res != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
+    return res
+
+
+def collect_coverage(pid, block_coverage=False):
+    """Record executed instructions or basic blocks from a running process."""
     coverage = set()
     _ptrace(PTRACE_ATTACH, pid)
     os.waitpid(pid, 0)
+
+    if not block_coverage:
+        regs = user_regs_struct()
+        while True:
+            try:
+                _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
+                coverage.add(regs.rip)
+            except OSError:
+                break
+            try:
+                _ptrace(PTRACE_SINGLESTEP, pid)
+            except OSError:
+                break
+            wpid, status = os.waitpid(pid, 0)
+            if os.WIFEXITED(status) or os.WIFSIGNALED(status):
+                break
+        try:
+            _ptrace(PTRACE_DETACH, pid)
+        except OSError:
+            pass
+        return coverage
+
+    exe = os.readlink(f"/proc/{pid}/exe")
+    blocks = _get_basic_blocks(exe)
+    breakpoints = {}
+    for b in blocks:
+        try:
+            orig = _ptrace_peek(pid, b)
+            breakpoints[b] = orig
+            _ptrace_poke(pid, b, (orig & ~0xFF) | 0xCC)
+        except OSError:
+            continue
+
+    _ptrace(PTRACE_CONT, pid)
     regs = user_regs_struct()
     while True:
-        try:
-            _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
-            coverage.add(regs.rip)
-        except OSError:
-            break
-        try:
-            _ptrace(PTRACE_SINGLESTEP, pid)
-        except OSError:
-            break
         wpid, status = os.waitpid(pid, 0)
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             break
+        if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:
+            _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
+            addr = regs.rip - 1
+            if addr in breakpoints:
+                coverage.add(addr)
+                orig = breakpoints.pop(addr)
+                _ptrace_poke(pid, addr, orig)
+                regs.rip = addr
+                _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
+                _ptrace(PTRACE_SINGLESTEP, pid)
+                os.waitpid(pid, 0)
+            _ptrace(PTRACE_CONT, pid)
+
     try:
+        for addr, orig in breakpoints.items():
+            try:
+                _ptrace_poke(pid, addr, orig)
+            except OSError:
+                pass
         _ptrace(PTRACE_DETACH, pid)
     except OSError:
         pass

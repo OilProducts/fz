@@ -9,10 +9,11 @@ import coverage
 class NetworkHarness:
     """Launch a network service target and interact with it over TCP/UDP."""
 
-    def __init__(self, host="127.0.0.1", port=0, udp=False):
+    def __init__(self, host="127.0.0.1", port=0, udp=False, block_coverage=False):
         self.host = host
         self.port = port
         self.udp = udp
+        self.block_coverage = block_coverage
 
     def run(self, target, data, timeout):
         """Start the target, send bytes over the network, and collect coverage."""
@@ -34,7 +35,7 @@ class NetworkHarness:
         try:
             sock.sendall(data)
             sock.close()
-            coverage_set = coverage.collect_coverage(proc.pid)
+            coverage_set = coverage.collect_coverage(proc.pid, self.block_coverage)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:

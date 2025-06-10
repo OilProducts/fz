@@ -16,8 +16,9 @@ from network_harness import NetworkHarness
 class Fuzzer:
     """Base fuzzer scaffold with simple coverage tracking."""
 
-    def __init__(self, corpus_dir="corpus"):
+    def __init__(self, corpus_dir="corpus", block_coverage=False):
         self.corpus = Corpus(corpus_dir)
+        self.block_coverage = block_coverage
 
     def _run_once(self, target, data, timeout, file_input=False, network=None):
         """Execute target once and record coverage."""
@@ -45,7 +46,7 @@ class Fuzzer:
                 proc.stdin.write(data)
                 proc.stdin.close()
 
-            coverage_set = coverage.collect_coverage(proc.pid)
+            coverage_set = coverage.collect_coverage(proc.pid, self.block_coverage)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -62,11 +63,11 @@ class Fuzzer:
         harness = None
         if args.tcp:
             host, port = args.tcp
-            harness = NetworkHarness(host, int(port), udp=False)
+            harness = NetworkHarness(host, int(port), udp=False, block_coverage=self.block_coverage)
             mode = "tcp"
         elif args.udp:
             host, port = args.udp
-            harness = NetworkHarness(host, int(port), udp=True)
+            harness = NetworkHarness(host, int(port), udp=True, block_coverage=self.block_coverage)
             mode = "udp"
         logging.info("Running %s fuzzer", mode)
         logging.info("Target: %s", args.target)
@@ -132,6 +133,11 @@ def parse_args():
         help="Directory to store interesting test cases",
     )
     parser.add_argument(
+        "--block-coverage",
+        action="store_true",
+        help="Use breakpoint-based basic block coverage",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging",
@@ -157,7 +163,7 @@ def main():
     args = parse_args()
     level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
-    fuzzer = Fuzzer(args.corpus_dir)
+    fuzzer = Fuzzer(args.corpus_dir, block_coverage=args.block_coverage)
     fuzzer.run(args)
 
 
