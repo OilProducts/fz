@@ -123,6 +123,7 @@ def _ptrace(request, pid, addr=0, data=0):
 
 
 def _ptrace_peek(pid, addr):
+    """Read a word from process *pid* at address *addr*."""
     logging.debug("peek pid=%d addr=%#x", pid, addr)
     res = libc.ptrace(PTRACE_PEEKTEXT, pid, ctypes.c_void_p(addr), None)
     if res == -1:
@@ -133,6 +134,7 @@ def _ptrace_peek(pid, addr):
 
 
 def _ptrace_poke(pid, addr, data):
+    """Write *data* as a word to process *pid* at address *addr*."""
     logging.debug("poke pid=%d addr=%#x data=%#x", pid, addr, data)
     res = libc.ptrace(PTRACE_POKETEXT, pid, ctypes.c_void_p(addr), ctypes.c_void_p(data))
     if res != 0:
