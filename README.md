@@ -116,3 +116,25 @@ For UDP services:
 python3 main.py --target /path/to/server \
     --udp-host 127.0.0.1 --udp-port 9999 --iterations 100
 ```
+
+## Using a Configuration File
+
+All command line options can be provided in a YAML file. The keys in the file
+must match the command line option names. Pass the file with `--config` and any
+CLI arguments will override the values from the file.
+
+Example `config.yaml`:
+
+```yaml
+target: /path/to/binary
+iterations: 1000
+input_size: 128
+timeout: 2
+file_input: true
+```
+
+Run the fuzzer using this configuration:
+
+```bash
+python3 main.py --config config.yaml
+```
