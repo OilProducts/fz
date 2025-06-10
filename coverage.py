@@ -21,6 +21,7 @@ PTRACE_POKETEXT = 4
 PTRACE_SETREGS = 13
 
 ARCH = platform.machine().lower()
+IS_DARWIN = platform.system() == "Darwin"
 
 if ARCH in ("aarch64", "arm64"):
     BREAKPOINT = 0xD4200000  # "brk #0" instruction
@@ -88,20 +89,41 @@ word_cache = {}
 
 def _get_image_base(pid, exe):
     """Return the load base address of *exe* in process *pid*."""
-    try:
-        with open(f"/proc/{pid}/maps") as f:
-            for line in f:
-                parts = line.rstrip().split(None, 5)
-                if len(parts) < 6:
-                    continue
-                addr_range, perms, offset, _dev, _inode, path = parts
-                if path != exe or "x" not in perms:
-                    continue
-                start = int(addr_range.split("-", 1)[0], 16)
-                off = int(offset, 16)
-                return start - off
-    except FileNotFoundError:
-        pass
+    if not IS_DARWIN:
+        try:
+            with open(f"/proc/{pid}/maps") as f:
+                for line in f:
+                    parts = line.rstrip().split(None, 5)
+                    if len(parts) < 6:
+                        continue
+                    addr_range, perms, offset, _dev, _inode, path = parts
+                    if path != exe or "x" not in perms:
+                        continue
+                    start = int(addr_range.split("-", 1)[0], 16)
+                    off = int(offset, 16)
+                    return start - off
+        except FileNotFoundError:
+            pass
+    else:  # macOS
+        try:
+            import lldb  # type: ignore
+
+            dbg = lldb.SBDebugger.Create()
+            dbg.SetAsync(False)
+            target = dbg.CreateTarget(exe)
+            err = lldb.SBError()
+            process = target.AttachToProcessWithID(dbg.GetListener(), pid, err)
+            if not err.Success():
+                logging.debug("LLDB attach failed: %s", err.GetCString())
+                lldb.SBDebugger.Destroy(dbg)
+                return 0
+            module = target.GetModuleAtIndex(0)
+            base = module.GetObjectFileHeaderAddress().GetLoadAddress(target)
+            process.Detach()
+            lldb.SBDebugger.Destroy(dbg)
+            return base
+        except Exception as e:  # pragma: no cover - best effort for macOS
+            logging.debug("Failed to determine base on macOS: %s", e)
     return 0
 
 
@@ -172,16 +194,70 @@ def _ptrace_poke(pid, addr, data):
     return res
 
 
-def collect_coverage(pid, timeout=1.0):
+def collect_coverage(pid, timeout=1.0, exe=None):
     """Record executed basic blocks from a running process."""
     logging.debug("Collecting coverage for pid %d", pid)
     coverage = set()
+
+    if exe is None:
+        try:
+            exe = os.readlink(f"/proc/{pid}/exe")
+        except OSError:
+            exe = None
+
+    if IS_DARWIN:
+        try:
+            import lldb  # type: ignore
+
+            if exe is None:
+                raise RuntimeError("Executable path required for macOS")
+
+            dbg = lldb.SBDebugger.Create()
+            dbg.SetAsync(False)
+            target = dbg.CreateTarget(exe)
+            err = lldb.SBError()
+            process = target.AttachToProcessWithID(dbg.GetListener(), pid, err)
+            if not err.Success():
+                logging.debug("LLDB attach failed: %s", err.GetCString())
+                lldb.SBDebugger.Destroy(dbg)
+                return coverage
+
+            base = target.GetModuleAtIndex(0).GetObjectFileHeaderAddress().GetLoadAddress(target)
+            logging.debug("%s loaded at %#x", exe, base)
+
+            blocks = _get_basic_blocks(exe)
+            bps = {base + b: target.BreakpointCreateByAddress(base + b) for b in blocks}
+
+            process.Continue()
+            end_time = time.time() + timeout * 2
+            while process.IsValid() and time.time() < end_time:
+                state = process.GetState()
+                if state in (lldb.eStateExited, lldb.eStateCrashed):
+                    break
+                if state == lldb.eStateStopped:
+                    frame = process.GetSelectedThread().GetFrameAtIndex(0)
+                    addr = frame.GetPC()
+                    if addr in bps:
+                        coverage.add(addr - base)
+                        target.BreakpointDelete(bps[addr].GetID())
+                        process.StepInstruction(False)
+                    process.Continue()
+                else:
+                    time.sleep(0.01)
+
+            process.Detach()
+            lldb.SBDebugger.Destroy(dbg)
+            logging.debug("Collected %d coverage entries", len(coverage))
+            return coverage
+        except Exception as e:  # pragma: no cover - best effort for macOS
+            logging.debug("macOS coverage failed: %s", e)
+            return set()
+
     _ptrace(PTRACE_ATTACH, pid)
     os.waitpid(pid, 0)
     logging.debug("Attached to pid %d", pid)
 
-    exe = os.readlink(f"/proc/{pid}/exe")
-    base = _get_image_base(pid, exe)
+    base = _get_image_base(pid, exe) if exe else 0
     logging.debug("%s loaded at %#x", exe, base)
 
     logging.debug("Inserting breakpoints for block coverage on %s", exe)
