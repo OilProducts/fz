@@ -170,7 +170,7 @@ def collect_coverage(pid, timeout=1.0):
 
     _ptrace(PTRACE_CONT, pid)
     regs = user_regs_struct()
-    end_time = time.time() + timeout
+    end_time = time.time() + timeout * 2
     while True:
         try:
             wpid, status = os.waitpid(pid, os.WNOHANG)
@@ -178,7 +178,7 @@ def collect_coverage(pid, timeout=1.0):
             break
         if wpid == 0:
             if time.time() > end_time:
-                logging.info("Coverage wait timed out")
+                logging.debug("Coverage wait timed out")
                 break
             time.sleep(0.01)
             continue

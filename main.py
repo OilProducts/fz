@@ -42,6 +42,8 @@ class Fuzzer:
             proc = subprocess.Popen(
                 argv,
                 stdin=subprocess.PIPE if not file_input else None,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
             if not file_input and proc.stdin:

@@ -17,7 +17,7 @@ class NetworkHarness:
     def run(self, target, data, timeout):
         """Start the target, send bytes over the network, and collect coverage."""
         logging.debug("Launching network target: %s", target)
-        proc = subprocess.Popen([target])
+        proc = subprocess.Popen([target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         sock_type = socket.SOCK_DGRAM if self.udp else socket.SOCK_STREAM
         sock = socket.socket(socket.AF_INET, sock_type)
 

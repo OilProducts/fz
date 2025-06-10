@@ -21,5 +21,5 @@ class Corpus:
         path = os.path.join(self.directory, fname)
         with open(path, "wb") as f:
             f.write(data)
-        logging.debug("Saved interesting input to %s", path)
+        logging.info("Saved interesting input to %s", path)
         return True
