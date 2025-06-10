@@ -4,6 +4,11 @@ import os
 import subprocess
 import tempfile
 
+try:
+    import yaml
+except ImportError:  # pragma: no cover - optional dependency
+    yaml = None
+
 import coverage
 from corpus import Corpus
 from network_harness import NetworkHarness
@@ -72,7 +77,21 @@ class Fuzzer:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="fz - a lightweight Python fuzzer")
+    # First parse only the --config argument so we can load defaults from file
+    config_parser = argparse.ArgumentParser(add_help=False)
+    config_parser.add_argument("--config", help="Path to YAML config file")
+    config_args, _ = config_parser.parse_known_args()
+
+    config_data = {}
+    if config_args.config:
+        if not yaml:
+            raise RuntimeError("PyYAML is required for configuration files")
+        with open(config_args.config) as f:
+            config_data = yaml.safe_load(f) or {}
+
+    parser = argparse.ArgumentParser(
+        description="fz - a lightweight Python fuzzer", parents=[config_parser]
+    )
     parser.add_argument("--target", required=True, help="Path to target binary or script")
     parser.add_argument("--iterations", type=int, default=1, help="Number of test iterations to run")
     parser.add_argument(
@@ -101,6 +120,15 @@ def parse_args():
     parser.add_argument("--tcp-port", type=int, help="Port for TCP connection")
     parser.add_argument("--udp-host", help="Host to send UDP packets to")
     parser.add_argument("--udp-port", type=int, help="Port for UDP packets")
+
+    # Verify config keys match existing parser options and set them as defaults
+    if config_data:
+        valid_dests = {action.dest for action in parser._actions}
+        unknown_keys = set(config_data) - valid_dests
+        if unknown_keys:
+            raise ValueError(f"Unknown config options: {', '.join(sorted(unknown_keys))}")
+        parser.set_defaults(**config_data)
+
     return parser.parse_args()
 
 
