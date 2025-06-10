@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import time
 
 try:
     import yaml
@@ -37,6 +38,7 @@ class Fuzzer:
             else:
                 argv = [target]
 
+            logging.debug("Launching target: %s", " ".join(argv))
             proc = subprocess.Popen(
                 argv,
                 stdin=subprocess.PIPE if not file_input else None,
@@ -46,6 +48,7 @@ class Fuzzer:
                 proc.stdin.write(data)
                 proc.stdin.close()
 
+            logging.debug("Collecting coverage from pid %d", proc.pid)
             coverage_set = coverage.collect_coverage(proc.pid, self.block_coverage)
             try:
                 proc.wait(timeout=timeout)
@@ -73,10 +76,22 @@ class Fuzzer:
         logging.info("Target: %s", args.target)
         logging.info("Iterations: %d", args.iterations)
 
+        start_time = time.time()
         for i in range(args.iterations):
             data = os.urandom(args.input_size)
             logging.debug("Iteration %d sending %d bytes", i, len(data))
             self._run_once(args.target, data, args.timeout, args.file_input, harness)
+        duration = time.time() - start_time
+        if duration > 0:
+            rate = args.iterations / duration
+            logging.info(
+                "Executed %d iterations in %.2f seconds (%.2f/sec)",
+                args.iterations,
+                duration,
+                rate,
+            )
+        else:
+            logging.info("Executed %d iterations", args.iterations)
 
 
 def parse_args():

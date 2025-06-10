@@ -17,6 +17,7 @@ class NetworkHarness:
 
     def run(self, target, data, timeout):
         """Start the target, send bytes over the network, and collect coverage."""
+        logging.debug("Launching network target: %s", target)
         proc = subprocess.Popen([target])
         sock_type = socket.SOCK_DGRAM if self.udp else socket.SOCK_STREAM
         sock = socket.socket(socket.AF_INET, sock_type)
@@ -25,14 +26,17 @@ class NetworkHarness:
         while True:
             try:
                 sock.connect((self.host, self.port))
+                logging.debug("Connected to %s:%d", self.host, self.port)
                 break
             except (ConnectionRefusedError, OSError):
                 if time.time() - start > timeout:
                     proc.kill()
                     raise RuntimeError("Could not connect to target service")
                 time.sleep(0.1)
+                logging.debug("Retrying connection...")
 
         try:
+            logging.debug("Sending %d bytes", len(data))
             sock.sendall(data)
             sock.close()
             coverage_set = coverage.collect_coverage(proc.pid, self.block_coverage)
@@ -44,4 +48,5 @@ class NetworkHarness:
         finally:
             if proc.poll() is None:
                 proc.kill()
+        logging.debug("Network run complete with %d coverage entries", len(coverage_set))
         return coverage_set

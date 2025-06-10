@@ -1,5 +1,6 @@
 import ctypes
 import ctypes.util
+import logging
 import os
 import re
 import signal
@@ -107,6 +108,7 @@ def _ptrace_poke(pid, addr, data):
 
 def collect_coverage(pid, block_coverage=False):
     """Record executed instructions or basic blocks from a running process."""
+    logging.debug("Collecting coverage for pid %d", pid)
     coverage = set()
     _ptrace(PTRACE_ATTACH, pid)
     os.waitpid(pid, 0)
@@ -130,9 +132,11 @@ def collect_coverage(pid, block_coverage=False):
             _ptrace(PTRACE_DETACH, pid)
         except OSError:
             pass
+        logging.debug("Collected %d instruction addresses", len(coverage))
         return coverage
 
     exe = os.readlink(f"/proc/{pid}/exe")
+    logging.debug("Inserting breakpoints for block coverage on %s", exe)
     blocks = _get_basic_blocks(exe)
     breakpoints = {}
     for b in blocks:
@@ -171,4 +175,5 @@ def collect_coverage(pid, block_coverage=False):
         _ptrace(PTRACE_DETACH, pid)
     except OSError:
         pass
+    logging.debug("Collected %d basic blocks", len(coverage))
     return coverage
