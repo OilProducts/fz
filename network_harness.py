@@ -40,6 +40,7 @@ class NetworkHarness:
             sock.sendall(data)
             sock.close()
             coverage_set = coverage.collect_coverage(proc.pid, self.block_coverage)
+            logging.debug("Collected %d coverage entries", len(coverage_set))
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
