@@ -59,7 +59,7 @@ class Fuzzer:
 
             logging.debug("Collecting coverage from pid %d", proc.pid)
             try:
-                coverage_set = coverage.collect_coverage(proc.pid, timeout)
+                coverage_set = coverage.collect_coverage(proc.pid, timeout, target)
             except FileNotFoundError:
                 logging.debug(
                     "Process %d exited before coverage collection", proc.pid
