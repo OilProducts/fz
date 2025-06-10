@@ -46,8 +46,15 @@ class Fuzzer:
             )
 
             if not file_input and proc.stdin:
-                proc.stdin.write(data)
-                proc.stdin.close()
+                try:
+                    proc.stdin.write(data)
+                except BrokenPipeError:
+                    logging.debug("Stdin pipe closed before data was written")
+                finally:
+                    try:
+                        proc.stdin.close()
+                    except BrokenPipeError:
+                        logging.debug("Broken pipe when closing stdin")
 
             logging.debug("Collecting coverage from pid %d", proc.pid)
             coverage_set = coverage.collect_coverage(proc.pid, self.block_coverage)
