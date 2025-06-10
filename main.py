@@ -60,11 +60,13 @@ class Fuzzer:
     def run(self, args):
         mode = "file" if args.file_input else "stdin"
         harness = None
-        if args.tcp_host and args.tcp_port:
-            harness = NetworkHarness(args.tcp_host, args.tcp_port, udp=False)
+        if args.tcp:
+            host, port = args.tcp
+            harness = NetworkHarness(host, int(port), udp=False)
             mode = "tcp"
-        elif args.udp_host and args.udp_port:
-            harness = NetworkHarness(args.udp_host, args.udp_port, udp=True)
+        elif args.udp:
+            host, port = args.udp
+            harness = NetworkHarness(host, int(port), udp=True)
             mode = "udp"
         logging.info("Running %s fuzzer", mode)
         logging.info("Target: %s", args.target)
@@ -106,27 +108,41 @@ def parse_args():
         default=1.0,
         help="Seconds to wait for the target before killing it",
     )
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--file-input",
         action="store_true",
         help="Write input to a temporary file and pass its path to the target",
+    )
+    mode_group.add_argument(
+        "--tcp",
+        nargs=2,
+        metavar=("HOST", "PORT"),
+        help="Send input over TCP to HOST and PORT",
+    )
+    mode_group.add_argument(
+        "--udp",
+        nargs=2,
+        metavar=("HOST", "PORT"),
+        help="Send input over UDP to HOST and PORT",
     )
     parser.add_argument(
         "--corpus-dir",
         default="corpus",
         help="Directory to store interesting test cases",
     )
-    parser.add_argument("--tcp-host", help="Host to connect to via TCP")
-    parser.add_argument("--tcp-port", type=int, help="Port for TCP connection")
-    parser.add_argument("--udp-host", help="Host to send UDP packets to")
-    parser.add_argument("--udp-port", type=int, help="Port for UDP packets")
 
     # Verify config keys match existing parser options and set them as defaults
     if config_data:
         valid_dests = {action.dest for action in parser._actions}
         unknown_keys = set(config_data) - valid_dests
         if unknown_keys:
-            raise ValueError(f"Unknown config options: {', '.join(sorted(unknown_keys))}")
+            raise ValueError(
+                f"Unknown config options: {', '.join(sorted(unknown_keys))}"
+            )
+        for action in parser._actions:
+            if action.dest in config_data:
+                action.required = False
         parser.set_defaults(**config_data)
 
     return parser.parse_args()
