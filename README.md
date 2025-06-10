@@ -90,8 +90,10 @@ To send input via a file instead of stdin:
 python3 main.py --target /path/to/binary --iterations 1000 --file-input
 ```
 
-Coverage is gathered automatically using `ptrace`. Inputs that execute new
-basic blocks are stored in the corpus directory. Use `--corpus-dir` to change
+Coverage is gathered automatically using `ptrace`. The addresses recorded are
+normalized to the binary's load base so identical inputs yield identical
+coverage sets across runs. Inputs that execute new basic blocks are stored in
+the corpus directory. Use `--corpus-dir` to change
 where these inputs are saved. For faster coverage, enable breakpoint-based
 basic block tracking with `--block-coverage`:
 

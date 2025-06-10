@@ -56,6 +56,25 @@ libc.ptrace.restype = ctypes.c_long
 _block_cache = {}
 
 
+def _get_image_base(pid, exe):
+    """Return the load base address of *exe* in process *pid*."""
+    try:
+        with open(f"/proc/{pid}/maps") as f:
+            for line in f:
+                parts = line.rstrip().split(None, 5)
+                if len(parts) < 6:
+                    continue
+                addr_range, perms, offset, _dev, _inode, path = parts
+                if path != exe or "x" not in perms:
+                    continue
+                start = int(addr_range.split("-", 1)[0], 16)
+                off = int(offset, 16)
+                return start - off
+    except FileNotFoundError:
+        pass
+    return 0
+
+
 def _get_basic_blocks(exe):
     """Return a sorted list of basic block addresses for *exe*."""
     if exe in _block_cache:
@@ -129,12 +148,16 @@ def collect_coverage(pid, block_coverage=False):
     os.waitpid(pid, 0)
     logging.debug("Attached to pid %d", pid)
 
+    exe = os.readlink(f"/proc/{pid}/exe")
+    base = _get_image_base(pid, exe)
+    logging.debug("%s loaded at %#x", exe, base)
+
     if not block_coverage:
         regs = user_regs_struct()
         while True:
             try:
                 _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
-                coverage.add(regs.rip)
+                coverage.add(regs.rip - base)
                 logging.debug("Executed instruction at %#x", regs.rip)
             except OSError:
                 break
@@ -153,9 +176,9 @@ def collect_coverage(pid, block_coverage=False):
         logging.debug("Collected %d instruction addresses", len(coverage))
         return coverage
 
-    exe = os.readlink(f"/proc/{pid}/exe")
     logging.debug("Inserting breakpoints for block coverage on %s", exe)
     blocks = _get_basic_blocks(exe)
+    blocks = [base + b for b in blocks]
     breakpoints = {}
     for b in blocks:
         try:
@@ -176,7 +199,7 @@ def collect_coverage(pid, block_coverage=False):
             _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
             addr = regs.rip - 1
             if addr in breakpoints:
-                coverage.add(addr)
+                coverage.add(addr - base)
                 logging.debug("Hit breakpoint at %#x", addr)
                 orig = breakpoints.pop(addr)
                 _ptrace_poke(pid, addr, orig)
