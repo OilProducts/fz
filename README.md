@@ -99,6 +99,7 @@ python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out
 ```
 
 This main script is minimal and will evolve alongside the project's features.
+Use `--debug` to enable verbose debug logging.
 
 ## Fuzzing a Network Service
 
