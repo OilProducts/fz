@@ -90,6 +90,12 @@ To send input via a file instead of stdin:
 python3 main.py --target /path/to/binary --iterations 1000 --file-input
 ```
 
+To fuzz continuously until interrupted, use `--run-forever`:
+
+```bash
+python3 main.py --target /path/to/binary --run-forever
+```
+
 Coverage is gathered automatically using `ptrace`. The addresses recorded are
 normalized to the binary's load base so identical inputs yield identical
 coverage sets across runs. Inputs that execute new basic blocks are stored in
@@ -136,6 +142,7 @@ iterations: 1000
 input_size: 128
 timeout: 2
 file_input: true
+run_forever: true
 ```
 
 Run the fuzzer using this configuration:
