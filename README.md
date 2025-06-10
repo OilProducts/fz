@@ -92,10 +92,11 @@ python3 main.py --target /path/to/binary --iterations 1000 --file-input
 
 Coverage is gathered automatically using `ptrace`. Inputs that execute new
 basic blocks are stored in the corpus directory. Use `--corpus-dir` to change
-where these inputs are saved:
+where these inputs are saved. For faster coverage, enable breakpoint-based
+basic block tracking with `--block-coverage`:
 
 ```bash
-python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out
+python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out --block-coverage
 ```
 
 This main script is minimal and will evolve alongside the project's features.
