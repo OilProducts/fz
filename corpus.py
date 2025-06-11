@@ -11,13 +11,14 @@ import subprocess
 class Corpus:
     """Store inputs that produce new coverage."""
 
-    def __init__(self, directory="corpus"):
+    def __init__(self, directory: str = "corpus", output_bytes: int = 0):
         self.directory = directory
         os.makedirs(directory, exist_ok=True)
         self.coverage = set()
         self.coverage_hashes = set()
+        self.output_bytes = output_bytes
 
-    def save_if_interesting(self, data, coverage):
+    def save_if_interesting(self, data: bytes, coverage, stdout: bytes = b"", stderr: bytes = b""):
         """Persist input if it triggers previously unseen coverage."""
         cov_hash = hashlib.sha1(
             ",".join(str(c) for c in sorted(coverage)).encode()
@@ -40,6 +41,10 @@ class Corpus:
             "coverage": sorted(coverage),
             "data": base64.b64encode(data).decode("ascii"),
         }
+        if stdout and self.output_bytes > 0:
+            record["stdout"] = base64.b64encode(stdout[: self.output_bytes]).decode("ascii")
+        if stderr and self.output_bytes > 0:
+            record["stderr"] = base64.b64encode(stderr[: self.output_bytes]).decode("ascii")
         with open(path, "w") as f:
             json.dump(record, f)
         logging.info("Saved interesting input to %s", path)

@@ -17,14 +17,16 @@ from network_harness import NetworkHarness
 class Fuzzer:
     """Base fuzzer scaffold with simple coverage tracking."""
 
-    def __init__(self, corpus_dir="corpus"):
-        self.corpus = Corpus(corpus_dir)
+    def __init__(self, corpus_dir: str = "corpus", output_bytes: int = 0):
+        self.corpus = Corpus(corpus_dir, output_bytes)
 
     def _run_once(self, target, data, timeout, file_input=False, network=None):
         """Execute target once and record coverage."""
         coverage_set = set()
         if network:
-            coverage_set, crashed, timed_out = network.run(target, data, timeout)
+            coverage_set, crashed, timed_out, stdout_data, stderr_data = network.run(
+                target, data, timeout, self.corpus.output_bytes
+            )
             logging.debug(
                 "Network run returned %d coverage entries", len(coverage_set)
             )
@@ -34,7 +36,9 @@ class Fuzzer:
                 self.corpus.minimize_input(
                     orig, target, timeout, file_input=False, network=network
                 )
-            interesting = self.corpus.save_if_interesting(data, coverage_set)
+            interesting = self.corpus.save_if_interesting(
+                data, coverage_set, stdout_data, stderr_data
+            )
             return interesting, coverage_set
         try:
             if file_input:
@@ -47,11 +51,13 @@ class Fuzzer:
                 argv = [target]
 
             logging.debug("Launching target: %s", " ".join(argv))
+            stdout_file = tempfile.TemporaryFile()
+            stderr_file = tempfile.TemporaryFile()
             proc = subprocess.Popen(
                 argv,
                 stdin=subprocess.PIPE if not file_input else None,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
             )
 
             if not file_input and proc.stdin:
@@ -88,9 +94,15 @@ class Fuzzer:
                 proc.kill()
                 timed_out = True
                 logging.warning("Execution timed out")
+            stdout_file.seek(0)
+            stderr_file.seek(0)
+            stdout_data = stdout_file.read(self.corpus.output_bytes) if self.corpus.output_bytes else b""
+            stderr_data = stderr_file.read(self.corpus.output_bytes) if self.corpus.output_bytes else b""
         finally:
             if file_input:
                 os.unlink(filename)
+            stdout_file.close()
+            stderr_file.close()
 
         if crashed or timed_out:
             prefix = "crash" if crashed else "timeout"
@@ -99,7 +111,9 @@ class Fuzzer:
                 orig, target, timeout, file_input=file_input
             )
 
-        interesting = self.corpus.save_if_interesting(data, coverage_set)
+        interesting = self.corpus.save_if_interesting(
+            data, coverage_set, stdout_data, stderr_data
+        )
         return interesting, coverage_set
 
     def _fuzz_loop(self, args):
@@ -164,7 +178,7 @@ class Fuzzer:
 
 
 def _worker(args):
-    fuzzer = Fuzzer(args.corpus_dir)
+    fuzzer = Fuzzer(args.corpus_dir, args.output_bytes)
     fuzzer._fuzz_loop(args)
 
 
@@ -208,6 +222,12 @@ def parse_args():
         type=int,
         default=1,
         help="Number of parallel fuzzing processes",
+    )
+    parser.add_argument(
+        "--output-bytes",
+        type=int,
+        default=0,
+        help="Number of stdout/stderr bytes to save with corpus samples",
     )
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
@@ -258,7 +278,7 @@ def main():
     args = parse_args()
     level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
-    fuzzer = Fuzzer(args.corpus_dir)
+    fuzzer = Fuzzer(args.corpus_dir, args.output_bytes)
     fuzzer.run(args)
 
 
