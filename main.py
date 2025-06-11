@@ -39,6 +39,11 @@ class Fuzzer:
             interesting = self.corpus.save_if_interesting(
                 data, coverage_set, stdout_data, stderr_data
             )
+            if interesting:
+                orig = self.corpus._save_failure(data, "interesting")
+                self.corpus.minimize_input(
+                    orig, target, timeout, file_input=False, network=network
+                )
             return interesting, coverage_set
         try:
             if file_input:
@@ -114,6 +119,11 @@ class Fuzzer:
         interesting = self.corpus.save_if_interesting(
             data, coverage_set, stdout_data, stderr_data
         )
+        if interesting:
+            orig = self.corpus._save_failure(data, "interesting")
+            self.corpus.minimize_input(
+                orig, target, timeout, file_input=file_input
+            )
         return interesting, coverage_set
 
     def _fuzz_loop(self, args):
