@@ -124,6 +124,14 @@ python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out
 This main script is minimal and will evolve alongside the project's features.
 Use `--debug` to enable verbose debug logging.
 
+## Mutation Workflow
+
+Inputs are chosen from previously saved corpus files and mutated before being
+executed. The mutator weights seeds by the amount of coverage they produced and
+applies simple strategies such as bit flipping, splicing two seeds together,
+and inserting or deleting bytes. Whenever a run yields new coverage the input
+is added to the pool so future mutations build on the most interesting cases.
+
 ## Fuzzing a Network Service
 
 The fuzzer can also target network servers. Provide the host and port of the

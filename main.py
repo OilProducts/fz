@@ -26,8 +26,8 @@ class Fuzzer:
         if network:
             coverage_set = network.run(target, data, timeout)
             logging.debug("Network run returned %d coverage entries", len(coverage_set))
-            self.corpus.save_if_interesting(data, coverage_set)
-            return
+            interesting = self.corpus.save_if_interesting(data, coverage_set)
+            return interesting, coverage_set
         try:
             if file_input:
                 with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -80,7 +80,8 @@ class Fuzzer:
             if file_input:
                 os.unlink(filename)
 
-        self.corpus.save_if_interesting(data, coverage_set)
+        interesting = self.corpus.save_if_interesting(data, coverage_set)
+        return interesting, coverage_set
 
     def _fuzz_loop(self, args):
         mode = "file" if args.file_input else "stdin"
@@ -100,11 +101,16 @@ class Fuzzer:
 
         start_time = time.time()
         i = 0
+        from mutator import Mutator
+        mutator = Mutator(args.corpus_dir, args.input_size)
         try:
             while True:
-                data = os.urandom(args.input_size)
+                data = mutator.next_input()
                 logging.debug("Iteration %d sending %d bytes", i, len(data))
-                self._run_once(args.target, data, args.timeout, args.file_input, harness)
+                interesting, coverage_set = self._run_once(
+                    args.target, data, args.timeout, args.file_input, harness
+                )
+                mutator.record_result(data, coverage_set, interesting)
                 i += 1
                 if not args.run_forever and i >= args.iterations:
                     break
