@@ -89,6 +89,7 @@ word_cache = {}
 
 def _get_image_base(pid, exe):
     """Return the load base address of *exe* in process *pid*."""
+    exe = os.path.realpath(exe)
     if not IS_DARWIN:
         try:
             with open(f"/proc/{pid}/maps") as f:
@@ -132,6 +133,7 @@ def _get_image_base(pid, exe):
 
 def _get_basic_blocks(exe):
     """Return a sorted list of basic block addresses for *exe*."""
+    exe = os.path.realpath(exe)
     if exe in _block_cache:
         logging.debug("Using cached basic blocks for %s", exe)
         return _block_cache[exe]
@@ -208,6 +210,9 @@ def collect_coverage(pid, timeout=1.0, exe=None):
         except OSError as e:
             logging.debug("Failed to read executable path for pid %d: %s", pid, e)
             exe = None
+
+    if exe is not None:
+        exe = os.path.realpath(exe)
 
     if IS_DARWIN:
         try:
