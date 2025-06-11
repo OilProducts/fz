@@ -83,7 +83,7 @@ bytes to the target's standard input on each iteration by default. Use
 to the target:
 
 ```bash
-python3 main.py --target /path/to/binary --iterations 1000 --input-size 64
+python3 main.py --target /path/to/binary --iterations 1000 --input-size 64 --mutations 4
 ```
 
 To send input via a file instead of stdin:
@@ -131,8 +131,10 @@ Use `--debug` to enable verbose debug logging.
 Inputs are chosen from previously saved corpus files and mutated before being
 executed. The mutator weights seeds by the amount of coverage they produced and
 applies simple strategies such as bit flipping, splicing two seeds together,
-and inserting or deleting bytes. Whenever a run yields new coverage the input
-is added to the pool so future mutations build on the most interesting cases.
+and inserting or deleting bytes. Each new input can be mutated multiple times in
+sequence (controlled by `--mutations`), allowing combinations of these
+operations. Whenever a run yields new coverage the input is added to the pool so
+future mutations build on the most interesting cases.
 
 ## Fuzzing a Network Service
 
@@ -164,6 +166,7 @@ Example `config.yaml`:
 target: /path/to/binary
 iterations: 1000
 input_size: 128
+mutations: 2
 timeout: 2
 file_input: true
 run_forever: true

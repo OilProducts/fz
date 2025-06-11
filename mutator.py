@@ -8,9 +8,12 @@ from typing import List, Set
 class Mutator:
     """Basic mutation engine backed by saved corpus inputs."""
 
-    def __init__(self, corpus_dir: str = "corpus", input_size: int = 256) -> None:
+    def __init__(
+        self, corpus_dir: str = "corpus", input_size: int = 256, max_mutations: int = 1
+    ) -> None:
         self.corpus_dir = corpus_dir
         self.input_size = input_size
+        self.max_mutations = max(1, int(max_mutations))
         self.seeds: List[bytes] = []
         self.weights: List[int] = []
         self._load_corpus()
@@ -68,15 +71,18 @@ class Mutator:
         data = bytearray(seed)
         if not data:
             data.extend(os.urandom(1))
-        strategy = random.choice(["bitflip", "splice", "insert", "delete"])
-        if strategy == "bitflip":
-            data = self._bitflip(data)
-        elif strategy == "splice":
-            data = self._splice(data)
-        elif strategy == "insert":
-            data = self._insert(data)
-        else:  # delete
-            data = self._delete(data)
+        strategies = ["bitflip", "splice", "insert", "delete"]
+        steps = random.randint(1, self.max_mutations)
+        for _ in range(steps):
+            strategy = random.choice(strategies)
+            if strategy == "bitflip":
+                data = self._bitflip(data)
+            elif strategy == "splice":
+                data = self._splice(data)
+            elif strategy == "insert":
+                data = self._insert(data)
+            else:  # delete
+                data = self._delete(data)
 
         if len(data) > self.input_size:
             data = data[: self.input_size]

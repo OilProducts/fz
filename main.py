@@ -145,7 +145,7 @@ class Fuzzer:
         start_time = time.time()
         i = 0
         from mutator import Mutator
-        mutator = Mutator(args.corpus_dir, args.input_size)
+        mutator = Mutator(args.corpus_dir, args.input_size, args.mutations)
         try:
             while True:
                 data = mutator.next_input()
@@ -220,6 +220,12 @@ def parse_args():
         type=int,
         default=256,
         help="Number of random bytes to send to the target's stdin",
+    )
+    parser.add_argument(
+        "--mutations",
+        type=int,
+        default=1,
+        help="Maximum number of mutation steps applied to each input",
     )
     parser.add_argument(
         "--timeout",
