@@ -33,6 +33,7 @@ def _get_image_base(pid, exe):
 def collect_coverage(pid, timeout=1.0, exe=None):
     logging.debug("Collecting coverage for pid %d (macOS)", pid)
     coverage = set()
+    prev_addr = None
 
     if exe is None:
         raise RuntimeError("Executable path required for macOS")
@@ -70,7 +71,10 @@ def collect_coverage(pid, timeout=1.0, exe=None):
                 frame = process.GetSelectedThread().GetFrameAtIndex(0)
                 addr = frame.GetPC()
                 if addr in bps:
-                    coverage.add(addr - base)
+                    curr = addr - base
+                    if prev_addr is not None:
+                        coverage.add((prev_addr, curr))
+                    prev_addr = curr
                     target.BreakpointDelete(bps[addr].GetID())
                     process.StepInstruction(False)
                 process.Continue()
@@ -79,7 +83,7 @@ def collect_coverage(pid, timeout=1.0, exe=None):
 
         process.Detach()
         lldb.SBDebugger.Destroy(dbg)
-        logging.debug("Collected %d coverage entries", len(coverage))
+        logging.debug("Collected %d basic block transitions", len(coverage))
         return coverage
     except Exception as e:  # pragma: no cover - best effort for macOS
         logging.debug("macOS coverage failed: %s", e)

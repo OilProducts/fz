@@ -45,7 +45,7 @@ This phase involves building the core engine for generating test cases, executin
 
   - [ ] Alternative Inputs: Explore sending signals as a form of input.
 
-  - [ ] Coverage Tracking: Use ptrace for basic instrumentation. Log basic block coverage for each input to inform future mutations and identify minimal crashing examples.
+  - [ ] Coverage Tracking: Use ptrace for basic instrumentation. Log basic block transition coverage for each input to inform future mutations and identify minimal crashing examples.
 
 - State Logging (On "Interesting" Events)
 
@@ -106,13 +106,13 @@ python3 main.py --target /path/to/binary --iterations 100 --parallel 4
 
 Coverage is gathered automatically using `ptrace`. The addresses recorded are
 normalized to the binary's load base so identical inputs yield identical
-coverage sets across runs. Inputs that execute new basic blocks are stored in
+coverage sets across runs. Inputs that execute new basic block transitions are stored in
 the corpus directory. Use `--corpus-dir` to change
-where these inputs are saved. Basic block coverage via breakpoints is always
+where these inputs are saved. Basic block transition coverage via breakpoints is always
 enabled.
 
 Each saved input is keyed by a hash of the coverage it produced. Samples are
-written as JSON files containing the executed basic blocks, the input bytes
+written as JSON files containing the executed basic block transitions, the input bytes
 (base64 encoded), and optionally the first N bytes of stdout/stderr from the
 target. Use `--output-bytes` to set how much output to store. Because filenames
 are derived from the coverage hash,
