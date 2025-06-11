@@ -243,7 +243,9 @@ def collect_coverage(pid, timeout=1.0, exe=None):
                         process.StepInstruction(False)
                     process.Continue()
                 else:
-                    time.sleep(0.01)
+                    # Yield execution briefly so the target process can run
+                    # without introducing a noticeable delay.
+                    time.sleep(0)
 
             process.Detach()
             lldb.SBDebugger.Destroy(dbg)
@@ -303,7 +305,10 @@ def collect_coverage(pid, timeout=1.0, exe=None):
             if time.time() > end_time:
                 logging.debug("Coverage wait timed out")
                 break
-            time.sleep(0.01)
+            # Yield to the scheduler so the traced process can continue
+            # executing without incurring the ~10ms delay from the previous
+            # implementation.
+            time.sleep(0)
             continue
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             break
