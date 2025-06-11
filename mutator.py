@@ -37,6 +37,10 @@ class Mutator:
             # Ensure at least one seed exists to mutate
             self.seeds.append(os.urandom(self.input_size))
             self.weights.append(1)
+        # Always include an empty seed for minimal mutations
+        if b"" not in self.seeds:
+            self.seeds.append(b"")
+            self.weights.append(1)
 
     # ---- mutation helpers ----
     def _choose_seed(self) -> bytes:
