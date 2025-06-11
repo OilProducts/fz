@@ -111,6 +111,12 @@ the corpus directory. Use `--corpus-dir` to change
 where these inputs are saved. Basic block coverage via breakpoints is always
 enabled.
 
+Each saved input is keyed by a hash of the coverage it produced. Samples are
+written as JSON files containing both the executed basic blocks and the input
+bytes (base64 encoded). Because filenames are derived from the coverage hash,
+parallel fuzzing only keeps the first input for a given coverage set,
+preventing duplicate samples that exercise the same code paths.
+
 ```bash
 python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out
 ```
