@@ -24,8 +24,16 @@ class Fuzzer:
         """Execute target once and record coverage."""
         coverage_set = set()
         if network:
-            coverage_set = network.run(target, data, timeout)
-            logging.debug("Network run returned %d coverage entries", len(coverage_set))
+            coverage_set, crashed, timed_out = network.run(target, data, timeout)
+            logging.debug(
+                "Network run returned %d coverage entries", len(coverage_set)
+            )
+            if crashed or timed_out:
+                prefix = "crash" if crashed else "timeout"
+                orig = self.corpus._save_failure(data, prefix)
+                self.corpus.minimize_input(
+                    orig, target, timeout, file_input=False, network=network
+                )
             interesting = self.corpus.save_if_interesting(data, coverage_set)
             return interesting, coverage_set
         try:
@@ -71,14 +79,25 @@ class Fuzzer:
                 )
                 coverage_set = set()
             logging.debug("Collected %d coverage entries", len(coverage_set))
+            crashed = False
+            timed_out = False
             try:
                 proc.wait(timeout=timeout)
+                crashed = proc.returncode not in (0, None)
             except subprocess.TimeoutExpired:
                 proc.kill()
+                timed_out = True
                 logging.warning("Execution timed out")
         finally:
             if file_input:
                 os.unlink(filename)
+
+        if crashed or timed_out:
+            prefix = "crash" if crashed else "timeout"
+            orig = self.corpus._save_failure(data, prefix)
+            self.corpus.minimize_input(
+                orig, target, timeout, file_input=file_input
+            )
 
         interesting = self.corpus.save_if_interesting(data, coverage_set)
         return interesting, coverage_set
