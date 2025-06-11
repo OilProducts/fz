@@ -37,6 +37,11 @@ def main() -> None:
     for path in _iter_samples(args.corpus_dir):
         with open(path) as f:
             record = json.load(f)
+        if "data" in record:
+            length = len(base64.b64decode(record["data"]))
+            print(f"== LENGTH OF INPUT from {os.path.basename(path)} ==")
+            print(length)
+            print()
         for key in ("stdout", "stderr"):
             if key in record:
                 print(f"== {key.upper()} from {os.path.basename(path)} ==")
