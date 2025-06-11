@@ -112,8 +112,10 @@ where these inputs are saved. Basic block coverage via breakpoints is always
 enabled.
 
 Each saved input is keyed by a hash of the coverage it produced. Samples are
-written as JSON files containing both the executed basic blocks and the input
-bytes (base64 encoded). Because filenames are derived from the coverage hash,
+written as JSON files containing the executed basic blocks, the input bytes
+(base64 encoded), and optionally the first N bytes of stdout/stderr from the
+target. Use `--output-bytes` to set how much output to store. Because filenames
+are derived from the coverage hash,
 parallel fuzzing only keeps the first input for a given coverage set,
 preventing duplicate samples that exercise the same code paths.
 
@@ -165,6 +167,7 @@ input_size: 128
 timeout: 2
 file_input: true
 run_forever: true
+output_bytes: 1024
 ```
 
 Run the fuzzer using this configuration:
