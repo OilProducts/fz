@@ -32,17 +32,23 @@ class Fuzzer:
             )
             if crashed or timed_out:
                 prefix = "crash" if crashed else "timeout"
-                orig = self.corpus._save_failure(data, prefix)
-                self.corpus.minimize_input(
-                    orig, target, timeout, file_input=False, network=network
+                saved, orig = self.corpus.save_input(
+                    data,
+                    coverage_set,
+                    prefix,
+                    stdout_data,
+                    stderr_data,
                 )
-            interesting = self.corpus.save_if_interesting(
-                data, coverage_set, stdout_data, stderr_data
+                if saved:
+                    self.corpus.minimize_input(
+                        orig, target, timeout, file_input=False, network=network
+                    )
+            interesting, path = self.corpus.save_input(
+                data, coverage_set, "interesting", stdout_data, stderr_data
             )
             if interesting:
-                orig = self.corpus._save_failure(data, "interesting")
                 self.corpus.minimize_input(
-                    orig, target, timeout, file_input=False, network=network
+                    path, target, timeout, file_input=False, network=network
                 )
             return interesting, coverage_set
         try:
@@ -111,18 +117,24 @@ class Fuzzer:
 
         if crashed or timed_out:
             prefix = "crash" if crashed else "timeout"
-            orig = self.corpus._save_failure(data, prefix)
-            self.corpus.minimize_input(
-                orig, target, timeout, file_input=file_input
+            saved, orig = self.corpus.save_input(
+                data,
+                coverage_set,
+                prefix,
+                stdout_data,
+                stderr_data,
             )
+            if saved:
+                self.corpus.minimize_input(
+                    orig, target, timeout, file_input=file_input
+                )
 
-        interesting = self.corpus.save_if_interesting(
-            data, coverage_set, stdout_data, stderr_data
+        interesting, path = self.corpus.save_input(
+            data, coverage_set, "interesting", stdout_data, stderr_data
         )
         if interesting:
-            orig = self.corpus._save_failure(data, "interesting")
             self.corpus.minimize_input(
-                orig, target, timeout, file_input=file_input
+                path, target, timeout, file_input=file_input
             )
         return interesting, coverage_set
 
