@@ -37,16 +37,19 @@ def main() -> None:
     for path in _iter_samples(args.corpus_dir):
         with open(path) as f:
             record = json.load(f)
+
+        basename = os.path.basename(path)
+
         if "data" in record:
             length = len(base64.b64decode(record["data"]))
-            print(f"== LENGTH OF INPUT from {os.path.basename(path)} ==")
-            print(length)
-            print()
+            print(f"{basename} LENGTH: {length}")
+
         for key in ("stdout", "stderr"):
             if key in record:
-                print(f"== {key.upper()} from {os.path.basename(path)} ==")
+                print(f"{basename} {key.upper()}:")
                 print(_decode_field(record[key]))
-                print()
+
+        print()
 
 
 if __name__ == "__main__":
