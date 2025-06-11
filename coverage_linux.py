@@ -94,6 +94,7 @@ def _get_image_base(pid, exe):
 def collect_coverage(pid, timeout=1.0, exe=None):
     logging.debug("Collecting coverage for pid %d", pid)
     coverage = set()
+    prev_addr = None
 
     if exe is None:
         try:
@@ -168,7 +169,10 @@ def collect_coverage(pid, timeout=1.0, exe=None):
             pc = get_pc(regs)
             addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
             if addr in breakpoints:
-                coverage.add(addr - base)
+                curr = addr - base
+                if prev_addr is not None:
+                    coverage.add((prev_addr, curr))
+                prev_addr = curr
                 logging.debug("Hit breakpoint at %#x", addr)
                 info = breakpoints.pop(addr)
                 if ARCH in ("aarch64", "arm64"):
@@ -220,5 +224,5 @@ def collect_coverage(pid, timeout=1.0, exe=None):
     except OSError as e:
         logging.debug("Failed to detach from pid %d: %s", pid, e)
 
-    logging.debug("Collected %d basic blocks", len(coverage))
+    logging.debug("Collected %d basic block transitions", len(coverage))
     return coverage
