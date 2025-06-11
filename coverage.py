@@ -103,7 +103,8 @@ def _get_image_base(pid, exe):
                     off = int(offset, 16)
                     return start - off
         except FileNotFoundError:
-            pass
+            logging.debug("/proc/%d/maps not found", pid)
+        logging.debug("Base address for %s not found in /proc/%d/maps", exe, pid)
     else:  # macOS
         try:
             import lldb  # type: ignore
@@ -124,6 +125,8 @@ def _get_image_base(pid, exe):
             return base
         except Exception as e:  # pragma: no cover - best effort for macOS
             logging.debug("Failed to determine base on macOS: %s", e)
+        logging.debug("Base address for %s not found on macOS", exe)
+    logging.debug("Could not determine base address for %s (pid %d)", exe, pid)
     return 0
 
 
@@ -202,7 +205,8 @@ def collect_coverage(pid, timeout=1.0, exe=None):
     if exe is None:
         try:
             exe = os.readlink(f"/proc/{pid}/exe")
-        except OSError:
+        except OSError as e:
+            logging.debug("Failed to read executable path for pid %d: %s", pid, e)
             exe = None
 
     if IS_DARWIN:
@@ -223,6 +227,8 @@ def collect_coverage(pid, timeout=1.0, exe=None):
                 return coverage
 
             base = target.GetModuleAtIndex(0).GetObjectFileHeaderAddress().GetLoadAddress(target)
+            if base == 0:
+                logging.debug("Base address not found for %s", exe)
             logging.debug("%s loaded at %#x", exe, base)
 
             blocks = _get_basic_blocks(exe)
@@ -243,7 +249,9 @@ def collect_coverage(pid, timeout=1.0, exe=None):
                         process.StepInstruction(False)
                     process.Continue()
                 else:
-                    time.sleep(0.01)
+                    # Yield execution briefly so the target process can run
+                    # without introducing a noticeable delay.
+                    time.sleep(0)
 
             process.Detach()
             lldb.SBDebugger.Destroy(dbg)
@@ -258,6 +266,8 @@ def collect_coverage(pid, timeout=1.0, exe=None):
     logging.debug("Attached to pid %d", pid)
 
     base = _get_image_base(pid, exe) if exe else 0
+    if exe and base == 0:
+        logging.debug("Base address not found for %s", exe)
     logging.debug("%s loaded at %#x", exe, base)
 
     logging.debug("Inserting breakpoints for block coverage on %s", exe)
@@ -288,7 +298,8 @@ def collect_coverage(pid, timeout=1.0, exe=None):
                 breakpoints[b] = orig
                 _ptrace_poke(pid, b, (orig & ~0xFF) | BREAKPOINT)
             logging.debug("Breakpoint inserted at %#x", b)
-        except OSError:
+        except OSError as e:
+            logging.debug("Failed to insert breakpoint at %#x: %s", b, e)
             continue
 
     _ptrace(PTRACE_CONT, pid)
@@ -298,12 +309,16 @@ def collect_coverage(pid, timeout=1.0, exe=None):
         try:
             wpid, status = os.waitpid(pid, os.WNOHANG)
         except ChildProcessError:
+            logging.debug("Child process %d disappeared", pid)
             break
         if wpid == 0:
             if time.time() > end_time:
                 logging.debug("Coverage wait timed out")
                 break
-            time.sleep(0.01)
+            # Yield to the scheduler so the traced process can continue
+            # executing without incurring the ~10ms delay from the previous
+            # implementation.
+            time.sleep(0)
             continue
         if os.WIFEXITED(status) or os.WIFSIGNALED(status):
             break
@@ -357,11 +372,12 @@ def collect_coverage(pid, timeout=1.0, exe=None):
                         word_cache[word_addr] = (orig_word, patched_word, patches)
                 else:
                     _ptrace_poke(pid, addr, info)
-            except OSError:
+            except OSError as e:
+                logging.debug("Failed to restore breakpoint at %#x: %s", addr, e)
                 pass
         _ptrace(PTRACE_DETACH, pid)
         logging.debug("Detached from pid %d", pid)
-    except OSError:
-        pass
+    except OSError as e:
+        logging.debug("Failed to detach from pid %d: %s", pid, e)
     logging.debug("Collected %d basic blocks", len(coverage))
     return coverage
