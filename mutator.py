@@ -52,9 +52,11 @@ class Mutator:
         return data
 
     def _splice(self, data: bytearray) -> bytearray:
-        if len(self.seeds) < 2:
+        # Only splice with non-empty seeds to avoid zero-length ranges
+        candidates = [s for s in self.seeds if s]
+        if len(candidates) < 2:
             return self._bitflip(data)
-        other = random.choice(self.seeds)
+        other = random.choice(candidates)
         pivot1 = random.randrange(len(data))
         pivot2 = random.randrange(len(other))
         return data[:pivot1] + other[pivot2:]
