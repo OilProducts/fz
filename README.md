@@ -175,3 +175,13 @@ Run the fuzzer using this configuration:
 ```bash
 python3 main.py --config config.yaml
 ```
+
+## Corpus Analysis
+
+Use `corpus_analyzer.py` to inspect the saved samples. The script prints the
+captured stdout and stderr for each entry in the corpus directory.
+
+```bash
+python3 corpus_analyzer.py --corpus-dir ./corpus
+```
+
