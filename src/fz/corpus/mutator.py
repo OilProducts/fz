@@ -2,19 +2,27 @@ import base64
 import json
 import os
 import random
-from typing import List, Set
+from typing import List, Set, Iterable
+
+from fz.coverage import ControlFlowGraph
 
 
 class Mutator:
     """Basic mutation engine backed by saved corpus inputs."""
 
     def __init__(
-        self, corpus_dir: str = "corpus", input_size: int = 256, max_mutations: int = 1
+        self,
+        corpus_dir: str = "corpus",
+        input_size: int = 256,
+        max_mutations: int = 1,
+        cfg: ControlFlowGraph | None = None,
     ) -> None:
         self.corpus_dir = corpus_dir
         self.input_size = input_size
         self.max_mutations = max(1, int(max_mutations))
+        self.cfg = cfg
         self.seeds: List[bytes] = []
+        self.seed_edges: List[Iterable[tuple]] = []
         self.weights: List[int] = []
         self._load_corpus()
 
@@ -28,22 +36,31 @@ class Mutator:
                 with open(path, "r") as f:
                     record = json.load(f)
                 data = base64.b64decode(record.get("data", ""))
-                coverage = record.get("coverage", [])
+                coverage = [tuple(c) for c in record.get("coverage", [])]
                 self.seeds.append(data)
+                self.seed_edges.append(coverage)
                 self.weights.append(max(1, len(coverage)))
             except Exception:
                 continue
         if not self.seeds:
             # Ensure at least one seed exists to mutate
             self.seeds.append(os.urandom(self.input_size))
+            self.seed_edges.append([])
             self.weights.append(1)
         # Always include an empty seed for minimal mutations
         if b"" not in self.seeds:
             self.seeds.append(b"")
+            self.seed_edges.append([])
             self.weights.append(1)
 
     # ---- mutation helpers ----
     def _choose_seed(self) -> bytes:
+        if self.cfg:
+            weights = []
+            for edges in self.seed_edges:
+                unseen = self.cfg.new_edge_count(edges)
+                weights.append(max(1, unseen))
+            return random.choices(self.seeds, weights=weights, k=1)[0]
         return random.choices(self.seeds, weights=self.weights, k=1)[0]
 
     def _bitflip(self, data: bytearray) -> bytearray:
@@ -105,5 +122,6 @@ class Mutator:
         """Update seed pool based on the result of a fuzz iteration."""
         if interesting:
             self.seeds.append(data)
+            self.seed_edges.append(list(coverage))
             self.weights.append(max(1, len(coverage)))
 
