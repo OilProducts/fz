@@ -83,25 +83,25 @@ bytes to the target's standard input on each iteration by default. Use
 to the target:
 
 ```bash
-python3 main.py --target /path/to/binary --iterations 1000 --input-size 64 --mutations 4
+python3 -m fz --target /path/to/binary --iterations 1000 --input-size 64 --mutations 4
 ```
 
 To send input via a file instead of stdin:
 
 ```bash
-python3 main.py --target /path/to/binary --iterations 1000 --file-input
+python3 -m fz --target /path/to/binary --iterations 1000 --file-input
 ```
 
 To fuzz continuously until interrupted, use `--run-forever`:
 
 ```bash
-python3 main.py --target /path/to/binary --run-forever
+python3 -m fz --target /path/to/binary --run-forever
 ```
 
 To run multiple fuzzing processes concurrently, use `--parallel`:
 
 ```bash
-python3 main.py --target /path/to/binary --iterations 100 --parallel 4
+python3 -m fz --target /path/to/binary --iterations 100 --parallel 4
 ```
 
 Coverage is gathered automatically using `ptrace`. The addresses recorded are
@@ -120,7 +120,7 @@ parallel fuzzing only keeps the first input for a given coverage set,
 preventing duplicate samples that exercise the same code paths.
 
 ```bash
-python3 main.py --target /path/to/binary --iterations 100 --corpus-dir ./out
+python3 -m fz --target /path/to/binary --iterations 100 --corpus-dir ./out
 ```
 
 This main script is minimal and will evolve alongside the project's features.
@@ -142,13 +142,13 @@ The fuzzer can also target network servers. Provide the host and port of the
 service and whether to use TCP or UDP:
 
 ```bash
-python3 main.py --target /path/to/server --tcp 127.0.0.1 9999 --iterations 100
+python3 -m fz --target /path/to/server --tcp 127.0.0.1 9999 --iterations 100
 ```
 
 For UDP services:
 
 ```bash
-python3 main.py --target /path/to/server --udp 127.0.0.1 9999 --iterations 100
+python3 -m fz --target /path/to/server --udp 127.0.0.1 9999 --iterations 100
 ```
 
 TCP and UDP modes are mutually exclusive, and neither can be used together with
@@ -176,16 +176,16 @@ output_bytes: 1024
 Run the fuzzer using this configuration:
 
 ```bash
-python3 main.py --config config.yaml
+python3 -m fz --config config.yaml
 ```
 
 ## Corpus Analysis
 
-Use `corpus_analyzer.py` to inspect the saved samples. The script prints the
+Use the `fz.corpus.analyzer` module to inspect the saved samples. The script prints the
 captured stdout, stderr, and length of the input for each entry in the corpus
 directory.
 
 ```bash
-python3 corpus_analyzer.py --corpus-dir ./corpus
+python3 -m fz.corpus.analyzer --corpus-dir ./corpus
 ```
 

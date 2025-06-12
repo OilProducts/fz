@@ -13,10 +13,10 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     yaml = None
 
-import coverage
-from corpus import Corpus
-from network_harness import NetworkHarness
-from target_runner import run_target
+from fz import coverage
+from fz.corpus.corpus import Corpus
+from fz.harness.network import NetworkHarness
+from fz.runner.target import run_target
 
 libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
 PTRACE_TRACEME = 0
@@ -98,7 +98,7 @@ class Fuzzer:
 
         start_time = time.time()
         i = 0
-        from mutator import Mutator
+        from fz.corpus.mutator import Mutator
         mutator = Mutator(args.corpus_dir, args.input_size, args.mutations)
         try:
             while True:

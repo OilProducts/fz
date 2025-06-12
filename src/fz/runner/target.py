@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from typing import Set, Tuple
 
-import coverage
+from fz import coverage
 
 libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
 PTRACE_TRACEME = 0
