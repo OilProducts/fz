@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import time
+import sys
 
 try:
     import yaml
@@ -187,6 +188,12 @@ class Fuzzer:
         if args.parallel > 1:
             import multiprocessing
 
+            if sys.platform == "darwin":
+                try:
+                    multiprocessing.set_start_method("fork")
+                except RuntimeError:
+                    pass
+
             processes = []
             for _ in range(args.parallel):
                 p = multiprocessing.Process(target=_worker, args=(args,))
@@ -200,6 +207,9 @@ class Fuzzer:
 
 
 def _worker(args):
+    if not logging.getLogger().hasHandlers():
+        level = logging.DEBUG if args.debug else logging.INFO
+        logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
     fuzzer = Fuzzer(args.corpus_dir, args.output_bytes)
     fuzzer._fuzz_loop(args)
 
