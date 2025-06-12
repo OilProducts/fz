@@ -5,6 +5,13 @@ import time
 import tempfile
 
 import coverage
+import ctypes
+import ctypes.util
+import os
+import signal
+
+libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+PTRACE_TRACEME = 0
 
 
 class NetworkHarness:
@@ -23,7 +30,14 @@ class NetworkHarness:
         logging.debug("Launching network target: %s", target)
         stdout_file = tempfile.TemporaryFile()
         stderr_file = tempfile.TemporaryFile()
-        proc = subprocess.Popen([target], stdout=stdout_file, stderr=stderr_file)
+
+        def _trace_me():
+            libc.ptrace(PTRACE_TRACEME, 0, None, None)
+
+        proc = subprocess.Popen(
+            [target], stdout=stdout_file, stderr=stderr_file, preexec_fn=_trace_me
+        )
+        os.waitpid(proc.pid, 0)
         sock_type = socket.SOCK_DGRAM if self.udp else socket.SOCK_STREAM
         sock = socket.socket(socket.AF_INET, sock_type)
 
@@ -46,7 +60,9 @@ class NetworkHarness:
             logging.debug("Sending %d bytes", len(data))
             sock.sendall(data)
             sock.close()
-            coverage_set = coverage.collect_coverage(proc.pid, timeout)
+            coverage_set = coverage.collect_coverage(
+                proc.pid, timeout, already_traced=True
+            )
             logging.debug("Collected %d coverage entries", len(coverage_set))
             try:
                 proc.wait(timeout=timeout)

@@ -4,6 +4,9 @@ import os
 import subprocess
 import tempfile
 import time
+import ctypes
+import ctypes.util
+import signal
 
 try:
     import yaml
@@ -13,6 +16,9 @@ except ImportError:  # pragma: no cover - optional dependency
 import coverage
 from corpus import Corpus
 from network_harness import NetworkHarness
+
+libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+PTRACE_TRACEME = 0
 
 class Fuzzer:
     """Base fuzzer scaffold with simple coverage tracking."""
@@ -64,12 +70,19 @@ class Fuzzer:
             logging.debug("Launching target: %s", " ".join(argv))
             stdout_file = tempfile.TemporaryFile()
             stderr_file = tempfile.TemporaryFile()
+
+            def _trace_me():
+                libc.ptrace(PTRACE_TRACEME, 0, None, None)
+
             proc = subprocess.Popen(
                 argv,
                 stdin=subprocess.PIPE if not file_input else None,
                 stdout=stdout_file,
                 stderr=stderr_file,
+                preexec_fn=_trace_me,
             )
+
+            os.waitpid(proc.pid, 0)
 
             if not file_input and proc.stdin:
                 try:
@@ -84,7 +97,9 @@ class Fuzzer:
 
             logging.debug("Collecting coverage from pid %d", proc.pid)
             try:
-                coverage_set = coverage.collect_coverage(proc.pid, timeout, target)
+                coverage_set = coverage.collect_coverage(
+                    proc.pid, timeout, target, already_traced=True
+                )
             except FileNotFoundError:
                 logging.debug(
                     "Process %d exited before coverage collection", proc.pid
