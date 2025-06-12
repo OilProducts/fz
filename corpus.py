@@ -143,12 +143,15 @@ class Corpus:
 
         minimal = data
         step = len(minimal) // 2
+        iterations = 0
         while step > 0 and len(minimal) > 1:
+            iterations += 1
             reduced = minimal[: len(minimal) - step]
             if reproduces_crash(reduced):
                 minimal = reduced
             else:
                 step //= 2
+        logging.info("Minimization loop executed %d iterations", iterations)
 
         if minimal == data:
             logging.info("Input already minimal")
