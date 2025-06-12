@@ -91,7 +91,7 @@ def _get_image_base(pid, exe):
     return 0
 
 
-def collect_coverage(pid, timeout=1.0, exe=None):
+def collect_coverage(pid, timeout=1.0, exe=None, already_traced=False):
     logging.debug("Collecting coverage for pid %d", pid)
     coverage = set()
     prev_addr = None
@@ -106,9 +106,10 @@ def collect_coverage(pid, timeout=1.0, exe=None):
     if exe is not None:
         exe = os.path.realpath(exe)
 
-    _ptrace(PTRACE_ATTACH, pid)
-    os.waitpid(pid, 0)
-    logging.debug("Attached to pid %d", pid)
+    if not already_traced:
+        _ptrace(PTRACE_ATTACH, pid)
+        os.waitpid(pid, 0)
+        logging.debug("Attached to pid %d", pid)
 
     base = _get_image_base(pid, exe) if exe else 0
     if exe and base == 0:
