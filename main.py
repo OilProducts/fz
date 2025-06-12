@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover - optional dependency
 import coverage
 from corpus import Corpus
 from network_harness import NetworkHarness
+from target_runner import run_target
 
 libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
 PTRACE_TRACEME = 0
@@ -36,99 +37,17 @@ class Fuzzer:
             logging.debug(
                 "Network run returned %d coverage entries", len(coverage_set)
             )
-            if crashed or timed_out:
-                prefix = "crash" if crashed else "timeout"
-                saved, orig = self.corpus.save_input(
-                    data,
-                    coverage_set,
-                    prefix,
-                    stdout_data,
-                    stderr_data,
-                )
-                if saved:
-                    self.corpus.minimize_input(
-                        orig, target, timeout, file_input=False, network=network
-                    )
-            interesting, path = self.corpus.save_input(
-                data, coverage_set, "interesting", stdout_data, stderr_data
+        else:
+            coverage_set, crashed, timed_out, stdout_data, stderr_data = run_target(
+                target,
+                data,
+                timeout,
+                file_input=file_input,
+                output_bytes=self.corpus.output_bytes,
             )
-            if interesting:
-                self.corpus.minimize_input(
-                    path, target, timeout, file_input=False, network=network
-                )
-            return interesting, coverage_set
-        try:
-            if file_input:
-                with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                    tmp.write(data)
-                    tmp.flush()
-                    filename = tmp.name
-                argv = [target, filename]
-            else:
-                argv = [target]
-
-            logging.debug("Launching target: %s", " ".join(argv))
-            stdout_file = tempfile.TemporaryFile()
-            stderr_file = tempfile.TemporaryFile()
-
-            def _trace_me():
-                libc.ptrace(PTRACE_TRACEME, 0, None, None)
-
-            proc = subprocess.Popen(
-                argv,
-                stdin=subprocess.PIPE if not file_input else None,
-                stdout=stdout_file,
-                stderr=stderr_file,
-                preexec_fn=_trace_me,
+            logging.debug(
+                "Run returned %d coverage entries", len(coverage_set)
             )
-
-            os.waitpid(proc.pid, 0)
-
-            if not file_input and proc.stdin:
-                try:
-                    proc.stdin.write(data)
-                except BrokenPipeError:
-                    logging.debug("Stdin pipe closed before data was written")
-                finally:
-                    try:
-                        proc.stdin.close()
-                    except BrokenPipeError:
-                        logging.debug("Broken pipe when closing stdin")
-
-            logging.debug("Collecting coverage from pid %d", proc.pid)
-            try:
-                coverage_set = coverage.collect_coverage(
-                    proc.pid, timeout, target, already_traced=True
-                )
-            except FileNotFoundError:
-                logging.debug(
-                    "Process %d exited before coverage collection", proc.pid
-                )
-                coverage_set = set()
-            except OSError as e:
-                logging.debug(
-                    "Failed to collect coverage from pid %d: %s", proc.pid, e
-                )
-                coverage_set = set()
-            logging.debug("Collected %d coverage entries", len(coverage_set))
-            crashed = False
-            timed_out = False
-            try:
-                proc.wait(timeout=timeout)
-                crashed = proc.returncode not in (0, None)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                timed_out = True
-                logging.warning("Execution timed out")
-            stdout_file.seek(0)
-            stderr_file.seek(0)
-            stdout_data = stdout_file.read(self.corpus.output_bytes) if self.corpus.output_bytes else b""
-            stderr_data = stderr_file.read(self.corpus.output_bytes) if self.corpus.output_bytes else b""
-        finally:
-            if file_input:
-                os.unlink(filename)
-            stdout_file.close()
-            stderr_file.close()
 
         if crashed or timed_out:
             prefix = "crash" if crashed else "timeout"
@@ -141,7 +60,11 @@ class Fuzzer:
             )
             if saved:
                 self.corpus.minimize_input(
-                    orig, target, timeout, file_input=file_input
+                    orig,
+                    target,
+                    timeout,
+                    file_input=file_input if not network else False,
+                    network=network if network else None,
                 )
 
         interesting, path = self.corpus.save_input(
@@ -149,7 +72,11 @@ class Fuzzer:
         )
         if interesting:
             self.corpus.minimize_input(
-                path, target, timeout, file_input=file_input
+                path,
+                target,
+                timeout,
+                file_input=file_input if not network else False,
+                network=network if network else None,
             )
         return interesting, coverage_set
 

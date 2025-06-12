@@ -1,0 +1,104 @@
+import ctypes
+import ctypes.util
+import logging
+import os
+import subprocess
+import tempfile
+from typing import Set, Tuple
+
+import coverage
+
+libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+PTRACE_TRACEME = 0
+
+
+def run_target(
+    target: str,
+    data: bytes,
+    timeout: float,
+    file_input: bool = False,
+    output_bytes: int = 0,
+) -> Tuple[Set[int], bool, bool, bytes, bytes]:
+    """Execute *target* with *data* once and return execution results."""
+    coverage_set: Set[int] = set()
+    stdout_file = tempfile.TemporaryFile()
+    stderr_file = tempfile.TemporaryFile()
+    filename = None
+    proc = None
+    try:
+        if file_input:
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write(data)
+                tmp.flush()
+                filename = tmp.name
+            argv = [target, filename]
+            stdin_pipe = None
+        else:
+            argv = [target]
+            stdin_pipe = subprocess.PIPE
+        logging.debug("Launching target: %s", " ".join(argv))
+
+        def _trace_me():
+            libc.ptrace(PTRACE_TRACEME, 0, None, None)
+
+        proc = subprocess.Popen(
+            argv,
+            stdin=stdin_pipe,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            preexec_fn=_trace_me,
+        )
+        os.waitpid(proc.pid, 0)
+
+        if not file_input and proc.stdin:
+            try:
+                proc.stdin.write(data)
+            except BrokenPipeError:
+                logging.debug("Stdin pipe closed before data was written")
+            finally:
+                try:
+                    proc.stdin.close()
+                except BrokenPipeError:
+                    logging.debug("Broken pipe when closing stdin")
+
+        logging.debug("Collecting coverage from pid %d", proc.pid)
+        try:
+            coverage_set = coverage.collect_coverage(
+                proc.pid, timeout, target, already_traced=True
+            )
+        except FileNotFoundError:
+            logging.debug(
+                "Process %d exited before coverage collection", proc.pid
+            )
+            coverage_set = set()
+        except OSError as e:
+            logging.debug(
+                "Failed to collect coverage from pid %d: %s", proc.pid, e
+            )
+            coverage_set = set()
+
+        crashed = False
+        timed_out = False
+        try:
+            proc.wait(timeout=timeout)
+            crashed = proc.returncode not in (0, None)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            timed_out = True
+            logging.warning("Execution timed out")
+        stdout_file.seek(0)
+        stderr_file.seek(0)
+        stdout_data = stdout_file.read(output_bytes) if output_bytes else b""
+        stderr_data = stderr_file.read(output_bytes) if output_bytes else b""
+    finally:
+        if file_input and filename:
+            try:
+                os.unlink(filename)
+            except OSError:
+                pass
+        if proc and proc.poll() is None:
+            proc.kill()
+        stdout_file.close()
+        stderr_file.close()
+
+    return coverage_set, crashed, timed_out, stdout_data, stderr_data

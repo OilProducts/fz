@@ -7,6 +7,8 @@ import time
 import tempfile
 import subprocess
 
+from target_runner import run_target
+
 
 class Corpus:
     """Store inputs that produce new coverage."""
@@ -94,52 +96,19 @@ class Corpus:
 
         def reproduces_crash(inp: bytes) -> bool:
             if network:
-                _cov, crashed, timed_out = network.run(target, inp, timeout)
+                _cov, crashed, timed_out, _stdout, _stderr = network.run(
+                    target, inp, timeout
+                )
                 return crashed or timed_out
-            if file_input:
-                tmp = tempfile.NamedTemporaryFile(delete=False)
-                try:
-                    tmp.write(inp)
-                    tmp.flush()
-                    argv = [target, tmp.name]
-                    proc = subprocess.Popen(
-                        argv,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    try:
-                        proc.wait(timeout=timeout)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        return True
-                    return proc.returncode not in (0, None)
-                finally:
-                    try:
-                        os.unlink(tmp.name)
-                    except OSError:
-                        pass
-            proc = subprocess.Popen(
-                [target],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+
+            cov, crashed, timed_out, _stdout, _stderr = run_target(
+                target,
+                inp,
+                timeout,
+                file_input=file_input,
+                output_bytes=0,
             )
-            if proc.stdin:
-                try:
-                    proc.stdin.write(inp)
-                except BrokenPipeError:
-                    pass
-                finally:
-                    try:
-                        proc.stdin.close()
-                    except BrokenPipeError:
-                        pass
-            try:
-                proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                return True
-            return proc.returncode not in (0, None)
+            return crashed or timed_out
 
         minimal = data
         step = len(minimal) // 2
