@@ -7,7 +7,7 @@ import time
 import tempfile
 import subprocess
 
-from target_runner import run_target
+from fz.runner.target import run_target
 
 
 class Corpus:

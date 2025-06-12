@@ -6,14 +6,14 @@ import platform
 import signal
 import time
 
-from coverage_utils import get_basic_blocks
+from .utils import get_basic_blocks
 
 # Architecture specific imports
 ARCH = platform.machine().lower()
 if ARCH in ("aarch64", "arm64"):
-    import arch_arm64 as arch
+    from ..arch import arm64 as arch
 else:
-    import arch_x86 as arch
+    from ..arch import x86 as arch
 
 
 libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)

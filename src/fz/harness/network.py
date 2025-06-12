@@ -4,7 +4,7 @@ import subprocess
 import time
 import tempfile
 
-import coverage
+from fz import coverage
 import ctypes
 import ctypes.util
 import os
