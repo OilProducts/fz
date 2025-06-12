@@ -26,7 +26,7 @@ This phase builds the foundational framework for targeting and monitoring applic
 
   - [ ] Initial Architecture (x86): Implement core functionality for the x86 architecture, establishing a modular design for future expansion to ARM, MIPS, and ARM64.
   - [x] ARM64 Support: Coverage instrumentation now works on aarch64 Linux systems.
-  - [x] macOS Support: Basic fuzzing works on macOS using LLDB for coverage.
+  - [x] macOS Support: Basic fuzzing works on macOS using ptrace for coverage.
 
   - [ ] Libc Variants: Start with statically compiled binaries, then expand to handle dynamically linked targets using glibc, uclibc, and musl.
 
