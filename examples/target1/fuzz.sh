@@ -11,4 +11,4 @@ mkdir -p "$CORPUS_DIR"
 
 # Run the fuzzer with a small number of iterations by default
 python3 ../../main.py --target "$(dirname "$0")/target1" --iterations 10 \
-    --input-size 64 --corpus-dir "$CORPUS_DIR" "$@"
+    --input-size 64 --corpus-dir "$CORPUS_DIR" --output-bytes 1024 "$@"
