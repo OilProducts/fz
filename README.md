@@ -9,6 +9,14 @@ Performant (for Python): Strive for efficient execution, acknowledging Python's 
 Near Feature Parity: Implement the key capabilities found in state-of-the-art fuzzers.
 
 Proven Effectiveness: Prove the fuzzer's capability by using it to discover at least one verifiable bug in a target application.
+## Installation
+
+Install the project in editable mode so the `fz` command is available:
+
+```bash
+pip install -e .
+```
+
 
 # Architectural Overview & Roadmap
 The fuzzer is designed around three distinct phases: Setup, Test, and Evaluate. The setup phase is optimized to run only once, not on every fuzzing iteration, to maximize throughput.

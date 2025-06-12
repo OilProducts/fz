@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fz"
+version = "0.1.0"
+description = "A lightweight Python fuzzer"
+readme = "README.md"
+requires-python = ">=3.8"
+
+[project.scripts]
+fz = "fz.__main__:main"
+fz-corpus-analyzer = "fz.corpus.analyzer:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
