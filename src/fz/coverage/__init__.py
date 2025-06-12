@@ -6,4 +6,7 @@ if platform.system() == "Darwin":
 else:
     from .linux import collect_coverage  # noqa: F401
 
-__all__ = ["collect_coverage"]
+from .cfg import ControlFlowGraph  # noqa: F401
+from .utils import get_possible_edges  # noqa: F401
+
+__all__ = ["collect_coverage", "ControlFlowGraph", "get_possible_edges"]
