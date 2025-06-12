@@ -4,7 +4,6 @@ import os
 import subprocess
 import tempfile
 import time
-import sys
 
 try:
     import yaml
@@ -188,15 +187,11 @@ class Fuzzer:
         if args.parallel > 1:
             import multiprocessing
 
-            if sys.platform == "darwin":
-                try:
-                    multiprocessing.set_start_method("fork")
-                except RuntimeError:
-                    pass
+            ctx = multiprocessing.get_context("spawn")
 
             processes = []
             for _ in range(args.parallel):
-                p = multiprocessing.Process(target=_worker, args=(args,))
+                p = ctx.Process(target=_worker, args=(args,))
                 p.start()
                 processes.append(p)
             for p in processes:
