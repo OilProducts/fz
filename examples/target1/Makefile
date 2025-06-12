@@ -6,9 +6,9 @@ TARGET = target1
 all: $(TARGET)
 
 $(TARGET): target1.c
-$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 clean:
-rm -f $(TARGET)
+	rm -f $(TARGET)
 
 .PHONY: all clean
