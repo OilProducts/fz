@@ -46,7 +46,7 @@ def main() -> None:
 
         for key in ("stdout", "stderr"):
             if key in record:
-                print(f"{basename} {key.upper()}:")
-                print(_decode_field(record[key]).rstrip())
+                decoded = _decode_field(record[key]).rstrip()
+                print(f"{basename} {key.upper()}: {decoded}")
 if __name__ == "__main__":
     main()
