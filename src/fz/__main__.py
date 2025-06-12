@@ -14,6 +14,7 @@ except ImportError:  # pragma: no cover - optional dependency
     yaml = None
 
 from fz import coverage
+from fz.coverage import ControlFlowGraph, get_possible_edges
 from fz.corpus.corpus import Corpus
 from fz.harness.network import NetworkHarness
 from fz.runner.target import run_target
@@ -26,6 +27,7 @@ class Fuzzer:
 
     def __init__(self, corpus_dir: str = "corpus", output_bytes: int = 0):
         self.corpus = Corpus(corpus_dir, output_bytes)
+        self.cfg = ControlFlowGraph()
 
     def _run_once(self, target, data, timeout, file_input=False, network=None):
         """Execute target once and record coverage."""
@@ -78,6 +80,7 @@ class Fuzzer:
                 file_input=file_input if not network else False,
                 network=network if network else None,
             )
+        self.cfg.add_edges(coverage_set)
         return interesting, coverage_set
 
     def _fuzz_loop(self, args):
@@ -96,10 +99,15 @@ class Fuzzer:
         iter_desc = "infinite" if args.run_forever else str(args.iterations)
         logging.info("Iterations: %s", iter_desc)
 
+        possible = get_possible_edges(args.target)
+        if possible:
+            logging.debug("Loaded %d static CFG edges", len(possible))
+            self.cfg.add_possible_edges(possible)
+
         start_time = time.time()
         i = 0
         from fz.corpus.mutator import Mutator
-        mutator = Mutator(args.corpus_dir, args.input_size, args.mutations)
+        mutator = Mutator(args.corpus_dir, args.input_size, args.mutations, cfg=self.cfg)
         try:
             while True:
                 data = mutator.next_input()
