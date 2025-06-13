@@ -1,10 +1,33 @@
 import logging
 import os
-import re
-import subprocess
+import platform
+
+from capstone import Cs, CS_ARCH_X86, CS_ARCH_ARM64, CS_MODE_64, CS_MODE_ARM
+from capstone import CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_OP_IMM
+from elftools.elf.elffile import ELFFile
 
 _block_cache = {}
 _edge_cache = {}
+
+
+def _load_text(exe: str):
+    """Return (text_bytes, vaddr) for the .text section of *exe*."""
+    with open(exe, "rb") as f:
+        elf = ELFFile(f)
+        text = elf.get_section_by_name(".text")
+        if text is None:
+            raise ValueError(".text section not found")
+        return text.data(), text["sh_addr"]
+
+
+def _get_disassembler():
+    arch = platform.machine().lower()
+    if arch in ("aarch64", "arm64"):
+        md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
+    else:
+        md = Cs(CS_ARCH_X86, CS_MODE_64)
+    md.detail = True
+    return md
 
 
 def get_basic_blocks(exe: str):
@@ -16,23 +39,24 @@ def get_basic_blocks(exe: str):
 
     logging.debug("Parsing basic blocks from %s", exe)
     try:
-        output = subprocess.check_output(["objdump", "-d", exe], text=True)
+        text, base = _load_text(exe)
     except Exception as e:
-        logging.debug("Failed to disassemble %s: %s", exe, e)
+        logging.debug("Failed to read .text from %s: %s", exe, e)
         _block_cache[exe] = []
         return _block_cache[exe]
 
+    md = _get_disassembler()
     blocks = set()
     prev_branch = True
-    branch_re = re.compile(r"\b(j\w+|call|ret|syscall)\b")
-    for line in output.splitlines():
-        m = re.match(r"\s*([0-9a-fA-F]+):", line)
-        if not m:
-            continue
-        addr = int(m.group(1), 16)
+    for insn in md.disasm(text, base):
         if prev_branch:
-            blocks.add(addr)
-        prev_branch = bool(branch_re.search(line))
+            blocks.add(insn.address)
+        is_branch = (
+            CS_GRP_JUMP in insn.groups
+            or CS_GRP_RET in insn.groups
+            or CS_GRP_CALL in insn.groups
+        )
+        prev_branch = is_branch
 
     _block_cache[exe] = sorted(blocks)
     logging.debug("Identified %d basic blocks in %s", len(blocks), exe)
@@ -40,51 +64,46 @@ def get_basic_blocks(exe: str):
 
 
 def get_possible_edges(exe: str):
-    """Return a set of possible control flow edges for *exe* via objdump."""
+    """Return a set of possible control flow edges for *exe* using capstone."""
     exe = os.path.realpath(exe)
     if exe in _edge_cache:
         logging.debug("Using cached CFG edges for %s", exe)
         return _edge_cache[exe]
 
     try:
-        output = subprocess.check_output(["objdump", "-d", exe], text=True)
+        text, base = _load_text(exe)
     except Exception as e:
-        logging.debug("Failed to disassemble %s for CFG: %s", exe, e)
+        logging.debug("Failed to read .text from %s: %s", exe, e)
         _edge_cache[exe] = set()
         return _edge_cache[exe]
 
+    md = _get_disassembler()
     edges = set()
     prev_addr = None
     prev_type = None  # None, 'cond', 'uncond'
 
-    # Regex to parse instruction lines: address: bytes  mnemonic operands
-    ins_re = re.compile(r"^\s*([0-9a-fA-F]+):\s+(?:[0-9a-fA-F]{2}\s+)*([a-zA-Z.]+)\s*(.*)$")
-    for line in output.splitlines():
-        m = ins_re.match(line)
-        if not m:
-            continue
-        addr = int(m.group(1), 16)
-        mnemonic = m.group(2)
-        ops = m.group(3)
+    for insn in md.disasm(text, base):
+        addr = insn.address
 
-        if prev_addr is not None:
-            if prev_type != "uncond":
-                edges.add((prev_addr, addr))
+        if prev_addr is not None and prev_type != "uncond":
+            edges.add((prev_addr, addr))
 
-        # Determine branch type
         branch_type = None
-        if mnemonic.startswith("j"):
-            branch_type = "cond" if mnemonic != "jmp" else "uncond"
-        elif mnemonic.startswith("ret"):
+        if CS_GRP_JUMP in insn.groups:
+            if insn.mnemonic in ("jmp", "b", "br"):
+                branch_type = "uncond"
+            else:
+                branch_type = "cond"
+        elif CS_GRP_RET in insn.groups:
             branch_type = "uncond"
-        elif mnemonic.startswith("call"):
+        elif CS_GRP_CALL in insn.groups:
             branch_type = "call"
 
         if branch_type:
-            m2 = re.search(r"([0-9a-fA-F]+)", ops)
-            if m2:
-                target = int(m2.group(1), 16)
-                edges.add((addr, target))
+            for op in insn.operands:
+                if op.type == CS_OP_IMM:
+                    edges.add((addr, op.imm))
+                    break
 
         prev_addr = addr
         prev_type = branch_type
