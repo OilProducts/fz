@@ -214,3 +214,10 @@ Graphviz:
 fz-cfg /usr/bin/file --output file.dot
 ```
 
+To generate an SVG directly without keeping the intermediate DOT data, use
+`--svg`:
+
+```bash
+fz-cfg /usr/bin/file --svg file.svg
+```
+
