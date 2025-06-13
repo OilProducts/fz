@@ -34,3 +34,21 @@ class ControlFlowGraph:
 
     def num_nodes(self):
         return len(self.adj)
+
+    def to_dot(self) -> str:
+        """Return the graph in Graphviz dot format."""
+        lines = ["digraph cfg {"]
+        for src, dsts in self.adj.items():
+            for dst in dsts:
+                edge = (src, dst)
+                attrs = []
+                if edge not in self.edge_counts:
+                    if edge in self.possible_edges:
+                        attrs.append("style=dashed")
+                if edge in self.edge_counts:
+                    count = self.edge_counts[edge]
+                    attrs.append(f"label=\"{count}\"")
+                attr_str = "" if not attrs else " [" + ",".join(attrs) + "]"
+                lines.append(f"    \"{src:#x}\" -> \"{dst:#x}\"{attr_str};")
+        lines.append("}")
+        return "\n".join(lines)
