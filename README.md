@@ -197,3 +197,20 @@ directory.
 python3 -m fz.corpus.analyzer --corpus-dir ./corpus
 ```
 
+## Control Flow Graph Visualization
+
+The `fz-cfg` script generates a Graphviz representation of a binary's possible
+control flow graph using static analysis. When run without an output file the
+DOT graph is printed to stdout:
+
+```bash
+fz-cfg /usr/bin/file
+```
+
+Provide `--output` to write the DOT data to a file that can be rendered with
+Graphviz:
+
+```bash
+fz-cfg /usr/bin/file --output file.dot
+```
+

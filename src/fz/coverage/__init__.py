@@ -8,5 +8,6 @@ else:
 
 from .cfg import ControlFlowGraph  # noqa: F401
 from .utils import get_possible_edges  # noqa: F401
+from .visualize import main as visualize_cfg  # noqa: F401
 
-__all__ = ["collect_coverage", "ControlFlowGraph", "get_possible_edges"]
+__all__ = ["collect_coverage", "ControlFlowGraph", "get_possible_edges", "visualize_cfg"]
