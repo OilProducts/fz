@@ -7,6 +7,7 @@ import re
 import signal
 import subprocess
 import time
+import errno
 
 from .utils import get_basic_blocks
 
@@ -209,6 +210,11 @@ def collect_coverage(pid, timeout=1.0, exe=None, already_traced=False):
                 else:
                     _ptrace_poke(pid, addr, info)
             except OSError as e:
+                if e.errno == errno.ESRCH:
+                    logging.debug(
+                        "Process %d disappeared while restoring breakpoints", pid
+                    )
+                    break
                 logging.debug("Failed to restore breakpoint at %#x: %s", addr, e)
         _ptrace(PTRACE_DETACH, pid)
         logging.debug("Detached from pid %d", pid)
