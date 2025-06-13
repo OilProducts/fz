@@ -111,15 +111,27 @@ class Corpus:
             return crashed or timed_out
 
         minimal = data
-        step = len(minimal) // 2
+        step = max(1, len(minimal) // 2)
         iterations = 0
+
         while step > 0 and len(minimal) > 1:
             iterations += 1
-            reduced = minimal[: len(minimal) - step]
-            if reproduces_crash(reduced):
-                minimal = reduced
-            else:
+            i = 0
+            changed = False
+
+            while i + step <= len(minimal) and len(minimal) > 1:
+                candidate = minimal[:i] + minimal[i + step :]
+                if len(candidate) == 0:
+                    break
+                if reproduces_crash(candidate):
+                    minimal = candidate
+                    changed = True
+                else:
+                    i += step
+
+            if not changed:
                 step //= 2
+
         logging.info("Minimization loop executed %d iterations", iterations)
 
         if minimal == data:
