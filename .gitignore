@@ -1,0 +1,2 @@
+# Ignore compiled test binaries
+/tests/coverage/fixture
