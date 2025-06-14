@@ -84,6 +84,7 @@ class Fuzzer:
         return interesting, coverage_set
 
     def _fuzz_loop(self, args, iter_counter=None, saved_counter=None):
+
         mode = "file" if args.file_input else "stdin"
         harness = None
         if args.tcp:
@@ -147,6 +148,7 @@ class Fuzzer:
             "duration": duration,
             "edges": self.cfg.num_edges(),
         }
+
         return stats
 
     def run(self, args):
@@ -217,6 +219,7 @@ class Fuzzer:
             duration = time.time() - start_time
             total_iters = iter_counter.value
             total_saved = saved_counter.value
+
             if duration > 0:
                 rate = total_iters / duration
                 logging.info(
@@ -241,6 +244,7 @@ def _worker(args, iter_counter=None, saved_counter=None):
         logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
     fuzzer = Fuzzer(args.corpus_dir, args.output_bytes)
     fuzzer._fuzz_loop(args, iter_counter, saved_counter)
+
 def parse_args():
     # First parse only the --config argument so we can load defaults from file
     config_parser = argparse.ArgumentParser(add_help=False)
