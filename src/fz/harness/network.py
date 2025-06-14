@@ -60,7 +60,8 @@ class NetworkHarness:
             logging.debug("Sending %d bytes", len(data))
             sock.sendall(data)
             sock.close()
-            coverage_set = coverage.collect_coverage(
+            collector = coverage.get_collector()
+            coverage_set = collector.collect_coverage(
                 proc.pid, timeout, already_traced=True
             )
             logging.debug("Collected %d coverage entries", len(coverage_set))
