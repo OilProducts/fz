@@ -43,9 +43,18 @@ class CoverageCollector(ABC):
     def _get_image_base(self, pid: int, exe: str) -> int:
         """Return the loaded base address for *exe* in *pid*."""
 
+    @abstractmethod
+    def _find_library(self, pid: int, name: str) -> tuple[Optional[str], int]:
+        """Return the path and base address for a loaded library."""
+
     def collect_coverage(
-        self, pid: int, timeout: float = 1.0, exe: Optional[str] = None, already_traced: bool = False
-    ) -> Set[tuple[int, int]]:
+        self,
+        pid: int,
+        timeout: float = 1.0,
+        exe: Optional[str] = None,
+        already_traced: bool = False,
+        libs: Optional[list[str]] = None,
+    ) -> Set[tuple[tuple[str, int], tuple[str, int]]]:
         """Collect basic block transition coverage from a traced process.
 
         Parameters
@@ -62,31 +71,47 @@ class CoverageCollector(ABC):
 
         Returns
         -------
-        set[tuple[int, int]]
-            The set of executed basic block transitions as ``(src, dst)`` pairs.
+        set[tuple[tuple[str, int], tuple[str, int]]]
+            The set of executed basic block transitions as
+            ``((module, src), (module, dst))`` pairs.
         """
         logging.debug("Collecting coverage for pid %d", pid)
-        coverage = set()
-        prev_addr = None
+        coverage: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
+        prev_addr: Optional[tuple[str, int]] = None
         word_cache = {}
 
         exe = self._resolve_exe(pid, exe)
+        libs = libs or []
 
         if not already_traced:
             _ptrace(PTRACE_ATTACH, pid)
             os.waitpid(pid, 0)
             logging.debug("Attached to pid %d", pid)
 
+        modules = []
         base = self._get_image_base(pid, exe) if exe else 0
-        if exe and base == 0:
-            logging.debug("Base address not found for %s", exe)
-        logging.debug("%s loaded at %#x", exe, base)
+        if exe:
+            if base == 0:
+                logging.debug("Base address not found for %s", exe)
+            logging.debug("%s loaded at %#x", exe, base)
+            modules.append((exe, base))
 
-        logging.debug("Inserting breakpoints for block coverage on %s", exe)
-        blocks = get_basic_blocks(exe) if exe else []
-        blocks = [base + b for b in blocks]
+        for lib in libs:
+            path, lib_base = self._find_library(pid, lib)
+            if path:
+                modules.append((path, lib_base))
+                logging.debug("%s loaded at %#x", path, lib_base)
+            else:
+                logging.debug("Library %s not found in process", lib)
+
+        logging.debug("Inserting breakpoints for block coverage")
+        blocks = []
+        for path, mbase in modules:
+            for b in get_basic_blocks(path):
+                blocks.append((path, mbase, b))
         breakpoints = {}
-        for b in blocks:
+        for path, mbase, off in blocks:
+            b = mbase + off
             try:
                 if ARCH in ("aarch64", "arm64"):
                     word_addr = b & ~7
@@ -104,10 +129,10 @@ class CoverageCollector(ABC):
                     _ptrace_poke(pid, word_addr, patched_word)
                     patches.add(offset)
                     word_cache[word_addr] = (orig_word, patched_word, patches)
-                    breakpoints[b] = (word_addr, offset)
+                    breakpoints[b] = (word_addr, offset, path, mbase)
                 else:
                     orig = _ptrace_peek(pid, b)
-                    breakpoints[b] = orig
+                    breakpoints[b] = (orig, path, mbase)
                     _ptrace_poke(pid, b, (orig & ~0xFF) | BREAKPOINT)
                 logging.debug("Breakpoint inserted at %#x", b)
             except OSError as e:
@@ -136,14 +161,17 @@ class CoverageCollector(ABC):
                 pc = get_pc(regs)
                 addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
                 if addr in breakpoints:
-                    curr = addr - base
+                    info = breakpoints.pop(addr)
+                    if ARCH in ("aarch64", "arm64"):
+                        word_addr, offset, mod_path, mod_base = info
+                    else:
+                        orig, mod_path, mod_base = info
+                    curr = (mod_path, addr - mod_base)
                     if prev_addr is not None:
                         coverage.add((prev_addr, curr))
                     prev_addr = curr
                     logging.debug("Hit breakpoint at %#x", addr)
-                    info = breakpoints.pop(addr)
                     if ARCH in ("aarch64", "arm64"):
-                        word_addr, offset = info
                         orig_word, patched_word, patches = word_cache[word_addr]
                         if offset == 0:
                             patched_word = (patched_word & ~0xFFFFFFFF) | (orig_word & 0xFFFFFFFF)
@@ -158,7 +186,7 @@ class CoverageCollector(ABC):
                             word_cache[word_addr] = (orig_word, patched_word, patches)
                         set_pc(regs, addr)
                     else:
-                        _ptrace_poke(pid, addr, info)
+                        _ptrace_poke(pid, addr, orig)
                         set_pc(regs, addr)
                     _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
                     _ptrace(PTRACE_SINGLESTEP, pid)
@@ -169,7 +197,7 @@ class CoverageCollector(ABC):
             for addr, info in breakpoints.items():
                 try:
                     if ARCH in ("aarch64", "arm64"):
-                        word_addr, offset = info
+                        word_addr, offset, _mod_path, _mod_base = info
                         orig_word, patched_word, patches = word_cache.get(word_addr, (0, 0, set()))
                         if offset == 0:
                             patched_word = (patched_word & ~0xFFFFFFFF) | (orig_word & 0xFFFFFFFF)
@@ -183,7 +211,8 @@ class CoverageCollector(ABC):
                             _ptrace_poke(pid, word_addr, patched_word)
                             word_cache[word_addr] = (orig_word, patched_word, patches)
                     else:
-                        _ptrace_poke(pid, addr, info)
+                        orig, _mod_path, _mod_base = info
+                        _ptrace_poke(pid, addr, orig)
                 except OSError as e:
                     if e.errno == errno.ESRCH:
                         logging.debug("Process %d disappeared while restoring breakpoints", pid)
@@ -233,6 +262,25 @@ class LinuxCollector(CoverageCollector):
         logging.debug("Base address for %s not found in /proc/%d/maps", exe, pid)
         return 0
 
+    def _find_library(self, pid: int, name: str) -> tuple[Optional[str], int]:
+        """Return the path and base for a loaded library matching ``name``."""
+        try:
+            with open(f"/proc/{pid}/maps") as f:
+                for line in f:
+                    parts = line.rstrip().split(None, 5)
+                    if len(parts) < 6:
+                        continue
+                    addr_range, perms, offset, _dev, _inode, path = parts
+                    if "x" not in perms:
+                        continue
+                    if os.path.basename(path) == name or path.endswith(name):
+                        start = int(addr_range.split("-", 1)[0], 16)
+                        off = int(offset, 16)
+                        return os.path.realpath(path), start - off
+        except FileNotFoundError:
+            logging.debug("/proc/%d/maps not found", pid)
+        return None, 0
+
 
 class MacOSCollector(CoverageCollector):
     """Coverage collector implementation for macOS."""
@@ -257,4 +305,17 @@ class MacOSCollector(CoverageCollector):
             logging.debug("Failed to determine base on macOS: %s", e)
         logging.debug("Base address for %s not found on macOS", exe)
         return 0
+
+    def _find_library(self, pid: int, name: str) -> tuple[Optional[str], int]:
+        """Return the path and base for a loaded library matching ``name``."""
+        try:
+            output = subprocess.check_output(["vmmap", str(pid)], text=True)
+            for line in output.splitlines():
+                if name in line and "__TEXT" in line:
+                    m = re.search(r"([0-9a-fA-F]+)-", line)
+                    if m:
+                        return name, int(m.group(1), 16)
+        except Exception as e:  # pragma: no cover - best effort for macOS
+            logging.debug("Failed to locate library %s: %s", name, e)
+        return None, 0
 

@@ -4,7 +4,7 @@ import logging
 import os
 import subprocess
 import tempfile
-from typing import Set, Tuple
+from typing import Set, Tuple, Optional
 
 from fz import coverage
 
@@ -18,9 +18,10 @@ def run_target(
     timeout: float,
     file_input: bool = False,
     output_bytes: int = 0,
-) -> Tuple[Set[int], bool, bool, bytes, bytes]:
+    libs: Optional[list[str]] = None,
+) -> Tuple[Set[tuple[tuple[str, int], tuple[str, int]]], bool, bool, bytes, bytes]:
     """Execute *target* with *data* once and return execution results."""
-    coverage_set: Set[int] = set()
+    coverage_set: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
     stdout_file = tempfile.TemporaryFile()
     stderr_file = tempfile.TemporaryFile()
     filename = None
@@ -65,7 +66,7 @@ def run_target(
         collector = coverage.get_collector()
         try:
             coverage_set = collector.collect_coverage(
-                proc.pid, timeout, target, already_traced=True
+                proc.pid, timeout, target, already_traced=True, libs=libs
             )
         except FileNotFoundError:
             logging.debug(

@@ -1,4 +1,9 @@
+import os
 from typing import Dict, Iterable, Set, Tuple
+
+
+Address = Tuple[str, int]
+Edge = Tuple[Address, Address]
 
 
 class ControlFlowGraph:
@@ -7,13 +12,13 @@ class ControlFlowGraph:
     def __init__(self) -> None:
         """Create an empty control flow graph."""
         # adjacency list mapping ``src`` -> ``{dst1, dst2, ...}``
-        self.adj: Dict[int, Set[int]] = {}
+        self.adj: Dict[Address, Set[Address]] = {}
         # execution count of each edge ``(src, dst)``
-        self.edge_counts: Dict[Tuple[int, int], int] = {}
+        self.edge_counts: Dict[Edge, int] = {}
         # edges discovered via static analysis
-        self.possible_edges: Set[Tuple[int, int]] = set()
+        self.possible_edges: Set[Edge] = set()
 
-    def add_edges(self, edges: Iterable[Tuple[int, int]]) -> None:
+    def add_edges(self, edges: Iterable[Edge]) -> None:
         """Add executed edges to the graph and increment their counters.
 
         Parameters
@@ -27,7 +32,7 @@ class ControlFlowGraph:
             key = (src, dst)
             self.edge_counts[key] = self.edge_counts.get(key, 0) + 1
 
-    def add_possible_edges(self, edges: Iterable[Tuple[int, int]]) -> None:
+    def add_possible_edges(self, edges: Iterable[Edge]) -> None:
         """Record statically discovered edges without incrementing counts.
 
         Parameters
@@ -39,11 +44,11 @@ class ControlFlowGraph:
             self.adj.setdefault(src, set()).add(dst)
             self.possible_edges.add((src, dst))
 
-    def edge_count(self, edge: Tuple[int, int]) -> int:
+    def edge_count(self, edge: Edge) -> int:
         """Return how many times ``edge`` was observed."""
         return self.edge_counts.get(edge, 0)
 
-    def new_edge_count(self, edges: Iterable[Tuple[int, int]]) -> int:
+    def new_edge_count(self, edges: Iterable[Edge]) -> int:
         """Return how many edges in ``edges`` are new to the graph."""
         return sum(1 for e in edges if e not in self.edge_counts)
 
@@ -69,6 +74,12 @@ class ControlFlowGraph:
                     count = self.edge_counts[edge]
                     attrs.append(f"label=\"{count}\"")
                 attr_str = "" if not attrs else " [" + ",".join(attrs) + "]"
-                lines.append(f"    \"{src:#x}\" -> \"{dst:#x}\"{attr_str};")
+                src_mod, src_off = src
+                dst_mod, dst_off = dst
+                src_label = f"{os.path.basename(src_mod)}:{src_off:#x}"
+                dst_label = f"{os.path.basename(dst_mod)}:{dst_off:#x}"
+                lines.append(
+                    f"    \"{src_label}\" -> \"{dst_label}\"{attr_str};"
+                )
         lines.append("}")
         return "\n".join(lines)

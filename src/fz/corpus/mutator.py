@@ -36,7 +36,11 @@ class Mutator:
                 with open(path, "r") as f:
                     record = json.load(f)
                 data = base64.b64decode(record.get("data", ""))
-                coverage = [tuple(c) for c in record.get("coverage", [])]
+                coverage = [
+                    ((c[0], c[1]), (c[2], c[3]))
+                    for c in record.get("coverage", [])
+                    if len(c) == 4
+                ]
                 self.seeds.append(data)
                 self.seed_edges.append(coverage)
                 self.weights.append(max(1, len(coverage)))
@@ -118,7 +122,7 @@ class Mutator:
         seed = self._choose_seed()
         return self.mutate(seed)
 
-    def record_result(self, data: bytes, coverage: Set[int], interesting: bool) -> None:
+    def record_result(self, data: bytes, coverage: Set[tuple[tuple[str, int], tuple[str, int]]], interesting: bool) -> None:
         """Update seed pool based on the result of a fuzz iteration."""
         if interesting:
             self.seeds.append(data)

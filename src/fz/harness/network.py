@@ -22,10 +22,26 @@ class NetworkHarness:
         self.port = port
         self.udp = udp
 
-    def run(self, target, data, timeout, output_bytes=0):
+    def run(self, target, data, timeout, output_bytes=0, libs=None):
         """Start the target, send bytes over the network, and collect coverage.
 
-        Returns a tuple of (coverage_set, crashed, timed_out, stdout, stderr).
+        Parameters
+        ----------
+        target:
+            Executable path for the network service.
+        data:
+            Bytes to send after connecting.
+        timeout:
+            Seconds to wait for the service before killing it.
+        output_bytes:
+            Maximum amount of stdout/stderr to capture.
+        libs:
+            Optional list of library names to instrument for coverage.
+
+        Returns
+        -------
+        tuple
+            ``(coverage_set, crashed, timed_out, stdout, stderr)``
         """
         logging.debug("Launching network target: %s", target)
         stdout_file = tempfile.TemporaryFile()
@@ -62,7 +78,7 @@ class NetworkHarness:
             sock.close()
             collector = coverage.get_collector()
             coverage_set = collector.collect_coverage(
-                proc.pid, timeout, already_traced=True
+                proc.pid, timeout, already_traced=True, libs=libs
             )
             logging.debug("Collected %d coverage entries", len(coverage_set))
             try:

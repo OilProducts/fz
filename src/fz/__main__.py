@@ -29,12 +29,12 @@ class Fuzzer:
         self.corpus = Corpus(corpus_dir, output_bytes)
         self.cfg = ControlFlowGraph()
 
-    def _run_once(self, target, data, timeout, file_input=False, network=None):
+    def _run_once(self, target, data, timeout, file_input=False, network=None, libs=None):
         """Execute target once and record coverage."""
         coverage_set = set()
         if network:
             coverage_set, crashed, timed_out, stdout_data, stderr_data = network.run(
-                target, data, timeout, self.corpus.output_bytes
+                target, data, timeout, self.corpus.output_bytes, libs=libs
             )
             logging.debug(
                 "Network run returned %d coverage entries", len(coverage_set)
@@ -46,6 +46,7 @@ class Fuzzer:
                 timeout,
                 file_input=file_input,
                 output_bytes=self.corpus.output_bytes,
+                libs=libs,
             )
             logging.debug(
                 "Run returned %d coverage entries", len(coverage_set)
@@ -67,6 +68,7 @@ class Fuzzer:
                     timeout,
                     file_input=file_input if not network else False,
                     network=network if network else None,
+                    libs=libs,
                 )
 
         interesting, path = self.corpus.save_input(
@@ -79,6 +81,7 @@ class Fuzzer:
                 timeout,
                 file_input=file_input if not network else False,
                 network=network if network else None,
+                libs=libs,
             )
         self.cfg.add_edges(coverage_set)
         return interesting, coverage_set
@@ -115,7 +118,12 @@ class Fuzzer:
                 data = mutator.next_input()
                 logging.debug("Iteration %d sending %d bytes", i, len(data))
                 interesting, coverage_set = self._run_once(
-                    args.target, data, args.timeout, args.file_input, harness
+                    args.target,
+                    data,
+                    args.timeout,
+                    args.file_input,
+                    harness,
+                    args.instrument_libs,
                 )
                 mutator.record_result(data, coverage_set, interesting)
                 if interesting:
@@ -297,6 +305,13 @@ def parse_args():
         type=int,
         default=0,
         help="Number of stdout/stderr bytes to save with corpus samples",
+    )
+    parser.add_argument(
+        "--instrument-libs",
+        nargs="+",
+        metavar="LIB",
+        default=[],
+        help="Names of shared libraries to instrument for coverage",
     )
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
