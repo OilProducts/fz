@@ -83,7 +83,7 @@ class Fuzzer:
         self.cfg.add_edges(coverage_set)
         return interesting, coverage_set
 
-    def _fuzz_loop(self, args):
+    def _fuzz_loop(self, args, result_queue=None):
         mode = "file" if args.file_input else "stdin"
         harness = None
         if args.tcp:
@@ -106,6 +106,7 @@ class Fuzzer:
 
         start_time = time.time()
         i = 0
+        saved = 0
         from fz.corpus.mutator import Mutator
         mutator = Mutator(args.corpus_dir, args.input_size, args.mutations, cfg=self.cfg)
         try:
@@ -116,6 +117,8 @@ class Fuzzer:
                     args.target, data, args.timeout, args.file_input, harness
                 )
                 mutator.record_result(data, coverage_set, interesting)
+                if interesting:
+                    saved += 1
                 i += 1
                 if not args.run_forever and i >= args.iterations:
                     break
@@ -132,33 +135,58 @@ class Fuzzer:
             )
         else:
             logging.info("Executed %d iterations", i)
+        stats = {
+            "iterations": i,
+            "saved": saved,
+            "duration": duration,
+            "edges": self.cfg.num_edges(),
+        }
+        if result_queue is not None:
+            result_queue.put(stats)
+        return stats
 
     def run(self, args):
         if args.parallel > 1:
             import multiprocessing
+            from fz.corpus.corpus import corpus_stats
 
             ctx = multiprocessing.get_context("spawn")
+            result_queue = ctx.SimpleQueue()
 
             processes = []
+            start_time = time.time()
+            from fz.worker import worker
+
             for _ in range(args.parallel):
-                p = ctx.Process(target=_worker, args=(args,))
+                p = ctx.Process(target=worker, args=(args, result_queue))
                 p.start()
                 processes.append(p)
+
+            results = []
+            for _ in processes:
+                results.append(result_queue.get())
             for p in processes:
                 p.join()
+
+            duration = time.time() - start_time
+            total_iters = sum(r["iterations"] for r in results)
+            total_saved = sum(r["saved"] for r in results)
+            if duration > 0:
+                rate = total_iters / duration
+                logging.info(
+                    "Executed %d iterations in %.2f seconds (%.2f/sec)",
+                    total_iters,
+                    duration,
+                    rate,
+                )
+            else:
+                logging.info("Executed %d iterations", total_iters)
+            samples, edges = corpus_stats(args.corpus_dir)
+            logging.info("Corpus entries: %d (+%d new)", samples, total_saved)
+            logging.info("Unique coverage edges: %d", edges)
             return
 
         self._fuzz_loop(args)
-
-
-def _worker(args):
-    if not logging.getLogger().hasHandlers():
-        level = logging.DEBUG if args.debug else logging.INFO
-        logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
-    fuzzer = Fuzzer(args.corpus_dir, args.output_bytes)
-    fuzzer._fuzz_loop(args)
-
-
 def parse_args():
     # First parse only the --config argument so we can load defaults from file
     config_parser = argparse.ArgumentParser(add_help=False)
