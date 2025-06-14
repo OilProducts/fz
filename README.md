@@ -134,6 +134,21 @@ python3 -m fz --target /path/to/binary --iterations 100 --corpus-dir ./out
 This main script is minimal and will evolve alongside the project's features.
 Use `--debug` to enable verbose debug logging.
 
+## Coverage Collector Architecture
+
+Coverage gathering is handled by subclasses of `CoverageCollector` in
+`fz.coverage.collector`.  The base class manages breakpoint insertion and
+provides the `collect_coverage` API.  Two implementations are currently
+available:
+
+- `LinuxCollector` &mdash; uses `/proc` and `ptrace` on Linux.
+- `MacOSCollector` &mdash; relies on `vmmap` and `ptrace` on macOS.
+
+`get_collector()` automatically instantiates the correct subclass for the host
+platform.  To support another operating system, create a new subclass that
+implements the `_resolve_exe` and `_get_image_base` methods and update
+`get_collector()` to return it when `platform.system()` matches your OS.
+
 ## Mutation Workflow
 
 Inputs are chosen from previously saved corpus files and mutated before being
@@ -220,4 +235,17 @@ To generate an SVG directly without keeping the intermediate DOT data, use
 ```bash
 fz-cfg /usr/bin/file --svg file.svg
 ```
+
+## Development and Testing
+
+Before submitting changes run the project's sanity checks:
+
+```bash
+python3 -m compileall src
+python3 -m fz --file-input --corpus-dir ./corpus/ --target /usr/bin/file --iterations 1
+python3 -m fz --file-input --corpus-dir ./corpus/ --target /usr/bin/file --iterations 2  # optional sanity check
+pytest -q
+```
+
+These commands verify the source tree compiles, a basic fuzzing run executes, and all tests pass.
 
