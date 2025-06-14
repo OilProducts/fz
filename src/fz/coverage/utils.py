@@ -2,6 +2,8 @@ import logging
 import os
 import platform
 
+from typing import List, Set, Tuple
+
 from capstone import Cs, CS_ARCH_X86, CS_ARCH_ARM64, CS_MODE_64, CS_MODE_ARM
 from capstone import CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_OP_IMM
 from elftools.elf.elffile import ELFFile
@@ -10,8 +12,20 @@ _block_cache = {}
 _edge_cache = {}
 
 
-def _load_text(exe: str):
-    """Return (text_bytes, vaddr) for the .text section of *exe*."""
+def _load_text(exe: str) -> tuple[bytes, int]:
+    """Return the contents and virtual address of the ``.text`` section.
+
+    Parameters
+    ----------
+    exe:
+        Path to the executable to inspect.
+
+    Returns
+    -------
+    tuple[bytes, int]
+        A tuple ``(data, address)`` containing the raw section bytes and the
+        section's load address.
+    """
     with open(exe, "rb") as f:
         elf = ELFFile(f)
         text = elf.get_section_by_name(".text")
@@ -21,6 +35,7 @@ def _load_text(exe: str):
 
 
 def _get_disassembler():
+    """Return a Capstone disassembler configured for the host architecture."""
     arch = platform.machine().lower()
     if arch in ("aarch64", "arm64"):
         md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
@@ -30,8 +45,20 @@ def _get_disassembler():
     return md
 
 
-def get_basic_blocks(exe: str):
-    """Return a sorted list of basic block addresses for *exe*."""
+def get_basic_blocks(exe: str) -> List[int]:
+    """Return a sorted list of basic block addresses for ``exe``.
+
+    Parameters
+    ----------
+    exe:
+        Path to the ELF binary to analyze.
+
+    Returns
+    -------
+    list[int]
+        A list of starting addresses for each basic block discovered in
+        ``exe``.
+    """
     exe = os.path.realpath(exe)
     if exe in _block_cache:
         logging.debug("Using cached basic blocks for %s", exe)
@@ -63,8 +90,22 @@ def get_basic_blocks(exe: str):
     return _block_cache[exe]
 
 
-def get_possible_edges(exe: str):
-    """Return a set of possible control flow edges for *exe* using capstone."""
+def get_possible_edges(exe: str) -> Set[Tuple[int, int]]:
+    """Return a set of possible control flow edges for ``exe``.
+
+    The edges are determined using a light-weight disassembly of the ``.text``
+    section via Capstone and represent potential branch targets.
+
+    Parameters
+    ----------
+    exe:
+        Path to the ELF binary to analyze.
+
+    Returns
+    -------
+    set[tuple[int, int]]
+        All edges ``(src, dst)`` that may be taken at runtime.
+    """
     exe = os.path.realpath(exe)
     if exe in _edge_cache:
         logging.debug("Using cached CFG edges for %s", exe)

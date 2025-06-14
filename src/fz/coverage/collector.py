@@ -45,8 +45,26 @@ class CoverageCollector(ABC):
 
     def collect_coverage(
         self, pid: int, timeout: float = 1.0, exe: Optional[str] = None, already_traced: bool = False
-    ) -> Set[tuple]:
-        """Collect basic block transition coverage from a traced process."""
+    ) -> Set[tuple[int, int]]:
+        """Collect basic block transition coverage from a traced process.
+
+        Parameters
+        ----------
+        pid:
+            Identifier of the process to trace.
+        timeout:
+            Maximum time in seconds to wait for coverage after the process stops.
+        exe:
+            Path to the executable.  If ``None``, an attempt is made to resolve it
+            automatically.
+        already_traced:
+            Set to ``True`` if the caller has already attached via ``ptrace``.
+
+        Returns
+        -------
+        set[tuple[int, int]]
+            The set of executed basic block transitions as ``(src, dst)`` pairs.
+        """
         logging.debug("Collecting coverage for pid %d", pid)
         coverage = set()
         prev_addr = None
@@ -184,6 +202,7 @@ class LinuxCollector(CoverageCollector):
     """Coverage collector implementation for Linux."""
 
     def _resolve_exe(self, pid: int, exe: Optional[str]) -> Optional[str]:
+        """Return the executable path for ``pid`` if not provided."""
         if exe is None:
             try:
                 exe = os.readlink(f"/proc/{pid}/exe")
@@ -195,6 +214,7 @@ class LinuxCollector(CoverageCollector):
         return exe
 
     def _get_image_base(self, pid: int, exe: str) -> int:
+        """Return the loaded base address for ``exe`` within ``pid``."""
         exe = os.path.realpath(exe)
         try:
             with open(f"/proc/{pid}/maps") as f:
@@ -218,11 +238,13 @@ class MacOSCollector(CoverageCollector):
     """Coverage collector implementation for macOS."""
 
     def _resolve_exe(self, pid: int, exe: Optional[str]) -> Optional[str]:
+        """Return ``exe`` resolved to an absolute path."""
         if exe is None:
             raise RuntimeError("Executable path required for macOS")
         return os.path.realpath(exe)
 
     def _get_image_base(self, pid: int, exe: str) -> int:
+        """Return the loaded base address for ``exe`` within ``pid``."""
         exe = os.path.realpath(exe)
         try:
             output = subprocess.check_output(["vmmap", str(pid)], text=True)

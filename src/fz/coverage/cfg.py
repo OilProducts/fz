@@ -1,38 +1,58 @@
+from typing import Dict, Iterable, Set, Tuple
+
+
 class ControlFlowGraph:
     """Simple directed graph built from basic block transitions."""
 
     def __init__(self) -> None:
-        # adjacency list mapping src -> {dst1, dst2, ...}
-        self.adj = {}
-        # execution count of each edge (src, dst)
-        self.edge_counts = {}
+        """Create an empty control flow graph."""
+        # adjacency list mapping ``src`` -> ``{dst1, dst2, ...}``
+        self.adj: Dict[int, Set[int]] = {}
+        # execution count of each edge ``(src, dst)``
+        self.edge_counts: Dict[Tuple[int, int], int] = {}
         # edges discovered via static analysis
-        self.possible_edges = set()
+        self.possible_edges: Set[Tuple[int, int]] = set()
 
-    def add_edges(self, edges):
-        """Add a sequence of (src, dst) edges to the graph."""
+    def add_edges(self, edges: Iterable[Tuple[int, int]]) -> None:
+        """Add executed edges to the graph and increment their counters.
+
+        Parameters
+        ----------
+        edges:
+            Iterable of ``(src, dst)`` edges that were observed during
+            execution.
+        """
         for src, dst in edges:
             self.adj.setdefault(src, set()).add(dst)
             key = (src, dst)
             self.edge_counts[key] = self.edge_counts.get(key, 0) + 1
 
-    def add_possible_edges(self, edges):
-        """Record statically discovered edges without incrementing counts."""
+    def add_possible_edges(self, edges: Iterable[Tuple[int, int]]) -> None:
+        """Record statically discovered edges without incrementing counts.
+
+        Parameters
+        ----------
+        edges:
+            Iterable of possible ``(src, dst)`` transitions.
+        """
         for src, dst in edges:
             self.adj.setdefault(src, set()).add(dst)
             self.possible_edges.add((src, dst))
 
-    def edge_count(self, edge):
+    def edge_count(self, edge: Tuple[int, int]) -> int:
+        """Return how many times ``edge`` was observed."""
         return self.edge_counts.get(edge, 0)
 
-    def new_edge_count(self, edges):
-        """Return how many edges in *edges* are new to the graph."""
+    def new_edge_count(self, edges: Iterable[Tuple[int, int]]) -> int:
+        """Return how many edges in ``edges`` are new to the graph."""
         return sum(1 for e in edges if e not in self.edge_counts)
 
-    def num_edges(self):
+    def num_edges(self) -> int:
+        """Return the number of unique executed edges."""
         return len(self.edge_counts)
 
-    def num_nodes(self):
+    def num_nodes(self) -> int:
+        """Return the number of unique nodes in the graph."""
         return len(self.adj)
 
     def to_dot(self) -> str:

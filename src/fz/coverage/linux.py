@@ -7,6 +7,8 @@ import signal
 import time
 import errno
 
+from typing import Optional, Set, Tuple
+
 from .utils import get_basic_blocks
 from .common import _ptrace, _ptrace_peek, _ptrace_poke
 
@@ -32,7 +34,21 @@ set_pc = arch.set_pc
 
 
 
-def _get_image_base(pid, exe):
+def _get_image_base(pid: int, exe: str) -> int:
+    """Return the loaded base address for ``exe`` within ``pid``.
+
+    Parameters
+    ----------
+    pid:
+        Identifier of the process containing ``exe``.
+    exe:
+        Path to the executable on disk.
+
+    Returns
+    -------
+    int
+        The base address or ``0`` if not found.
+    """
     exe = os.path.realpath(exe)
     try:
         with open(f"/proc/{pid}/maps") as f:
@@ -52,7 +68,27 @@ def _get_image_base(pid, exe):
     return 0
 
 
-def collect_coverage(pid, timeout=1.0, exe=None, already_traced=False):
+def collect_coverage(
+    pid: int, timeout: float = 1.0, exe: Optional[str] = None, already_traced: bool = False
+) -> Set[Tuple[int, int]]:
+    """Collect basic block transition coverage from a Linux process.
+
+    Parameters
+    ----------
+    pid:
+        Identifier of the process to trace.
+    timeout:
+        Maximum number of seconds to wait for coverage events.
+    exe:
+        Path to the executable. If ``None``, the path is resolved via ``/proc``.
+    already_traced:
+        Set to ``True`` if the caller has already attached using ``ptrace``.
+
+    Returns
+    -------
+    set[tuple[int, int]]
+        The executed basic block transitions.
+    """
     logging.debug("Collecting coverage for pid %d", pid)
     coverage = set()
     prev_addr = None
