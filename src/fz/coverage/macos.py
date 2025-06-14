@@ -30,7 +30,6 @@ user_regs_struct = arch.user_regs_struct
 get_pc = arch.get_pc
 set_pc = arch.set_pc
 
-word_cache = {}
 
 
 def _get_image_base(pid, exe):
@@ -52,6 +51,7 @@ def collect_coverage(pid, timeout=1.0, exe=None, already_traced=False):
     logging.debug("Collecting coverage for pid %d (macOS ptrace)", pid)
     coverage = set()
     prev_addr = None
+    word_cache = {}
 
     if exe is None:
         raise RuntimeError("Executable path required for macOS")
