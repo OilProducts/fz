@@ -6,6 +6,7 @@ import base64
 import time
 import tempfile
 import subprocess
+from typing import Optional
 
 from fz.runner.target import run_target
 
@@ -74,12 +75,36 @@ class Corpus:
         logging.info("Saved %s input to %s", category, path)
         return True, path
 
-    def minimize_input(self, path: str, target: str, timeout: float = 1.0,
-                        file_input: bool = False, network=None) -> str:
+    def minimize_input(
+        self,
+        path: str,
+        target: str,
+        timeout: float = 1.0,
+        file_input: bool = False,
+        network=None,
+        libs: Optional[list[str]] = None,
+    ) -> str:
         """Minimize the crashing input saved at *path*.
 
-        The returned path points to the minimized input which is stored
-        alongside the original file.
+        Parameters
+        ----------
+        path:
+            File path of the saved crashing input.
+        target:
+            Target binary to execute for validation.
+        timeout:
+            Seconds to wait for each execution.
+        file_input:
+            Pass input via temporary file if ``True``.
+        network:
+            Optional network harness for service targets.
+        libs:
+            Additional libraries to instrument during execution.
+
+        Returns
+        -------
+        str
+            Path to the minimized crashing input.
         """
         try:
             mode = "r" if path.endswith(".json") else "rb"
@@ -97,7 +122,7 @@ class Corpus:
         def reproduces_crash(inp: bytes) -> bool:
             if network:
                 _cov, crashed, timed_out, _stdout, _stderr = network.run(
-                    target, inp, timeout
+                    target, inp, timeout, libs=libs
                 )
                 return crashed or timed_out
 
@@ -107,6 +132,7 @@ class Corpus:
                 timeout,
                 file_input=file_input,
                 output_bytes=0,
+                libs=libs,
             )
             return crashed or timed_out
 

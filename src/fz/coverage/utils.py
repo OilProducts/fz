@@ -3,7 +3,6 @@ import os
 import platform
 
 from typing import List, Set, Tuple
-
 from capstone import Cs, CS_ARCH_X86, CS_ARCH_ARM64, CS_MODE_64, CS_MODE_ARM
 from capstone import CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_OP_IMM
 from elftools.elf.elffile import ELFFile
@@ -77,7 +76,7 @@ def get_basic_blocks(exe: str) -> List[int]:
     prev_branch = True
     for insn in md.disasm(text, base):
         if prev_branch:
-            blocks.add(insn.address)
+            blocks.add(insn.address - base)
         is_branch = (
             CS_GRP_JUMP in insn.groups
             or CS_GRP_RET in insn.groups
@@ -90,7 +89,8 @@ def get_basic_blocks(exe: str) -> List[int]:
     return _block_cache[exe]
 
 
-def get_possible_edges(exe: str) -> Set[Tuple[int, int]]:
+
+def get_possible_edges(exe: str) -> Set[Tuple[Tuple[str, int], Tuple[str, int]]]:
     """Return a set of possible control flow edges for ``exe``.
 
     The edges are determined using a light-weight disassembly of the ``.text``
@@ -103,8 +103,8 @@ def get_possible_edges(exe: str) -> Set[Tuple[int, int]]:
 
     Returns
     -------
-    set[tuple[int, int]]
-        All edges ``(src, dst)`` that may be taken at runtime.
+    set[tuple[tuple[str, int], tuple[str, int]]]
+        All edges ``((module, src), (module, dst))`` that may be taken at runtime.
     """
     exe = os.path.realpath(exe)
     if exe in _edge_cache:
@@ -127,7 +127,7 @@ def get_possible_edges(exe: str) -> Set[Tuple[int, int]]:
         addr = insn.address
 
         if prev_addr is not None and prev_type != "uncond":
-            edges.add((prev_addr, addr))
+            edges.add(((exe, prev_addr - base), (exe, addr - base)))
 
         branch_type = None
         if CS_GRP_JUMP in insn.groups:
@@ -143,7 +143,7 @@ def get_possible_edges(exe: str) -> Set[Tuple[int, int]]:
         if branch_type:
             for op in insn.operands:
                 if op.type == CS_OP_IMM:
-                    edges.add((addr, op.imm))
+                    edges.add(((exe, addr - base), (exe, op.imm - base)))
                     break
 
         prev_addr = addr
