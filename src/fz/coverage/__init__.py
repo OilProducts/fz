@@ -1,13 +1,23 @@
-"""Platform-dispatching coverage collection."""
+"""Coverage collector factory and utilities."""
 import platform
 
-if platform.system() == "Darwin":
-    from .macos import collect_coverage  # noqa: F401
-else:
-    from .linux import collect_coverage  # noqa: F401
+from .collector import CoverageCollector, LinuxCollector, MacOSCollector
+from .cfg import ControlFlowGraph
+from .utils import get_possible_edges
+from .visualize import main as visualize_cfg
 
-from .cfg import ControlFlowGraph  # noqa: F401
-from .utils import get_possible_edges  # noqa: F401
-from .visualize import main as visualize_cfg  # noqa: F401
 
-__all__ = ["collect_coverage", "ControlFlowGraph", "get_possible_edges", "visualize_cfg"]
+def get_collector() -> CoverageCollector:
+    """Return a :class:`CoverageCollector` for the current platform."""
+    if platform.system() == "Darwin":
+        return MacOSCollector()
+    return LinuxCollector()
+
+__all__ = [
+    "CoverageCollector",
+    "get_collector",
+    "ControlFlowGraph",
+    "get_possible_edges",
+    "visualize_cfg",
+]
+

@@ -62,8 +62,9 @@ def run_target(
                     logging.debug("Broken pipe when closing stdin")
 
         logging.debug("Collecting coverage from pid %d", proc.pid)
+        collector = coverage.get_collector()
         try:
-            coverage_set = coverage.collect_coverage(
+            coverage_set = collector.collect_coverage(
                 proc.pid, timeout, target, already_traced=True
             )
         except FileNotFoundError:
