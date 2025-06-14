@@ -1,0 +1,5 @@
+# Ignore compiled test binaries
+/tests/coverage/fixture
+
+# Ignore build artifacts
+*.egg-info/
