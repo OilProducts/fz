@@ -83,7 +83,8 @@ class Fuzzer:
         self.cfg.add_edges(coverage_set)
         return interesting, coverage_set
 
-    def _fuzz_loop(self, args, result_queue=None):
+    def _fuzz_loop(self, args, iter_counter=None, saved_counter=None):
+
         mode = "file" if args.file_input else "stdin"
         harness = None
         if args.tcp:
@@ -119,6 +120,12 @@ class Fuzzer:
                 mutator.record_result(data, coverage_set, interesting)
                 if interesting:
                     saved += 1
+                    if saved_counter is not None:
+                        with saved_counter.get_lock():
+                            saved_counter.value += 1
+                if iter_counter is not None:
+                    with iter_counter.get_lock():
+                        iter_counter.value += 1
                 i += 1
                 if not args.run_forever and i >= args.iterations:
                     break
@@ -141,8 +148,7 @@ class Fuzzer:
             "duration": duration,
             "edges": self.cfg.num_edges(),
         }
-        if result_queue is not None:
-            result_queue.put(stats)
+
         return stats
 
     def run(self, args):
@@ -150,27 +156,70 @@ class Fuzzer:
             import multiprocessing
             from fz.corpus.corpus import corpus_stats
 
-            ctx = multiprocessing.get_context("spawn")
-            result_queue = ctx.SimpleQueue()
+            ctx = multiprocessing.get_context()
+            iter_counter = ctx.Value('i', 0)
+            saved_counter = ctx.Value('i', 0)
 
             processes = []
             start_time = time.time()
-            from fz.worker import worker
 
             for _ in range(args.parallel):
-                p = ctx.Process(target=worker, args=(args, result_queue))
+                p = ctx.Process(target=_worker, args=(args, iter_counter, saved_counter))
                 p.start()
                 processes.append(p)
 
-            results = []
-            for _ in processes:
-                results.append(result_queue.get())
-            for p in processes:
-                p.join()
+            try:
+                table = None
+                try:
+                    from rich.live import Live
+                    from rich.table import Table
+                    table = Table()
+                    table.add_column("Iterations", justify="right")
+                    table.add_column("Saved", justify="right")
+                    table.add_column("Rate", justify="right")
+                    table.add_column("Corpus", justify="right")
+                    table.add_column("Edges", justify="right")
+                except Exception:
+                    Live = None
+
+                def snapshot():
+                    elapsed = time.time() - start_time
+                    iters = iter_counter.value
+                    saves = saved_counter.value
+                    rate = iters / elapsed if elapsed > 0 else 0.0
+                    samples, edges = corpus_stats(args.corpus_dir)
+                    if table is None:
+                        return (
+                            f"iters={iters} saved={saves} rate={rate:.2f}/sec "
+                            f"corpus={samples} edges={edges}"
+                        )
+                    table.rows = []
+                    table.add_row(
+                        str(iters),
+                        str(saves),
+                        f"{rate:.2f}/sec",
+                        str(samples),
+                        str(edges),
+                    )
+                    return table
+
+                if Live:
+                    with Live(snapshot(), refresh_per_second=1) as live:
+                        while any(p.is_alive() for p in processes):
+                            live.update(snapshot())
+                            time.sleep(1)
+                else:
+                    while any(p.is_alive() for p in processes):
+                        print(snapshot(), end="\r", flush=True)
+                        time.sleep(1)
+            finally:
+                for p in processes:
+                    p.join()
 
             duration = time.time() - start_time
-            total_iters = sum(r["iterations"] for r in results)
-            total_saved = sum(r["saved"] for r in results)
+            total_iters = iter_counter.value
+            total_saved = saved_counter.value
+
             if duration > 0:
                 rate = total_iters / duration
                 logging.info(
@@ -187,6 +236,15 @@ class Fuzzer:
             return
 
         self._fuzz_loop(args)
+
+
+def _worker(args, iter_counter=None, saved_counter=None):
+    if not logging.getLogger().hasHandlers():
+        level = logging.DEBUG if getattr(args, "debug", False) else logging.INFO
+        logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
+    fuzzer = Fuzzer(args.corpus_dir, args.output_bytes)
+    fuzzer._fuzz_loop(args, iter_counter, saved_counter)
+
 def parse_args():
     # First parse only the --config argument so we can load defaults from file
     config_parser = argparse.ArgumentParser(add_help=False)
