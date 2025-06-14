@@ -148,3 +148,23 @@ class Corpus:
                 f.write(minimal)
         logging.info("Minimized input saved to %s", min_path)
         return min_path
+
+
+def corpus_stats(directory: str) -> tuple[int, int]:
+    """Return the number of corpus entries and unique edges in *directory*."""
+    entries = 0
+    edges = set()
+    if not os.path.isdir(directory):
+        return entries, 0
+    for name in os.listdir(directory):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(directory, name)
+        try:
+            with open(path) as f:
+                record = json.load(f)
+            edges.update(tuple(e) for e in record.get("coverage", []))
+            entries += 1
+        except Exception:
+            continue
+    return entries, len(edges)
