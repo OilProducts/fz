@@ -10,6 +10,7 @@ import time
 import errno
 
 from .utils import get_basic_blocks
+from .common import _ptrace, _ptrace_peek, _ptrace_poke
 
 ARCH = platform.machine().lower()
 if ARCH in ("aarch64", "arm64"):
@@ -17,17 +18,11 @@ if ARCH in ("aarch64", "arm64"):
 else:
     from ..arch import x86 as arch
 
-libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
-libc.ptrace.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
-libc.ptrace.restype = ctypes.c_long
-
 PTRACE_ATTACH = 16
 PTRACE_DETACH = 17
 PTRACE_CONT = 7
 PTRACE_SINGLESTEP = 9
 PTRACE_GETREGS = 12
-PTRACE_PEEKTEXT = 1
-PTRACE_POKETEXT = 4
 PTRACE_SETREGS = 13
 
 BREAKPOINT = arch.BREAKPOINT
@@ -36,40 +31,6 @@ get_pc = arch.get_pc
 set_pc = arch.set_pc
 
 word_cache = {}
-
-
-def _ptrace(request, pid, addr=0, data=0):
-    logging.debug(
-        "ptrace request=%d pid=%d addr=%#x data=%#x",
-        request,
-        pid,
-        addr,
-        data,
-    )
-    res = libc.ptrace(request, pid, ctypes.c_void_p(addr), ctypes.c_void_p(data))
-    if res != 0:
-        err = ctypes.get_errno()
-        raise OSError(err, os.strerror(err))
-    return res
-
-
-def _ptrace_peek(pid, addr):
-    logging.debug("peek pid=%d addr=%#x", pid, addr)
-    res = libc.ptrace(PTRACE_PEEKTEXT, pid, ctypes.c_void_p(addr), None)
-    if res == -1:
-        err = ctypes.get_errno()
-        if err != 0:
-            raise OSError(err, os.strerror(err))
-    return res
-
-
-def _ptrace_poke(pid, addr, data):
-    logging.debug("poke pid=%d addr=%#x data=%#x", pid, addr, data)
-    res = libc.ptrace(PTRACE_POKETEXT, pid, ctypes.c_void_p(addr), ctypes.c_void_p(data))
-    if res != 0:
-        err = ctypes.get_errno()
-        raise OSError(err, os.strerror(err))
-    return res
 
 
 def _get_image_base(pid, exe):
