@@ -5,6 +5,7 @@ from .cfg import ControlFlowGraph
 
 
 def main() -> None:
+    """Entry point for the ``fz.coverage.visualize`` CLI."""
     parser = argparse.ArgumentParser(description="Visualize the control flow graph of a binary")
     parser.add_argument("binary", help="Path to the binary to analyze")
     group = parser.add_mutually_exclusive_group()
