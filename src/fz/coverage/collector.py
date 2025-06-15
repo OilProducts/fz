@@ -47,6 +47,31 @@ class CoverageCollector(ABC):
     def _find_library(self, pid: int, name: str) -> tuple[Optional[str], int]:
         """Return the path and base address for a loaded library."""
 
+    def _wait_for_libraries(
+        self, pid: int, libs: list[str], timeout: float
+    ) -> list[tuple[str, int]]:
+        """Wait until ``libs`` are loaded in ``pid`` and return their info."""
+        modules: list[tuple[str, int]] = []
+        remaining = set(libs)
+        end_time = time.time() + timeout
+        while remaining and time.time() < end_time:
+            for lib in list(remaining):
+                path, base = self._find_library(pid, lib)
+                if path:
+                    modules.append((path, base))
+                    remaining.remove(lib)
+                    logging.debug("%s loaded at %#x", path, base)
+            if remaining:
+                try:
+                    _ptrace(PTRACE_SINGLESTEP, pid)
+                    os.waitpid(pid, 0)
+                except OSError as e:
+                    logging.debug("Failed waiting for libraries: %s", e)
+                    break
+        for lib in remaining:
+            logging.debug("Library %s not found in process", lib)
+        return modules
+
     def collect_coverage(
         self,
         pid: int,
@@ -96,13 +121,8 @@ class CoverageCollector(ABC):
             logging.debug("%s loaded at %#x", exe, base)
             modules.append((exe, base))
 
-        for lib in libs:
-            path, lib_base = self._find_library(pid, lib)
-            if path:
-                modules.append((path, lib_base))
-                logging.debug("%s loaded at %#x", path, lib_base)
-            else:
-                logging.debug("Library %s not found in process", lib)
+        if libs:
+            modules.extend(self._wait_for_libraries(pid, libs, timeout))
 
         logging.debug("Inserting breakpoints for block coverage")
         blocks = []
