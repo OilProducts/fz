@@ -7,6 +7,7 @@ import time
 import errno
 import subprocess
 import re
+from elftools.elf.elffile import ELFFile
 from abc import ABC, abstractmethod
 from typing import Optional, Set
 
@@ -250,6 +251,57 @@ class CoverageCollector(ABC):
 class LinuxCollector(CoverageCollector):
     """Coverage collector implementation for Linux."""
 
+    def _find_loader(self, pid: int) -> tuple[Optional[str], int]:
+        """Return the path and base address of the dynamic loader."""
+        try:
+            with open(f"/proc/{pid}/maps") as f:
+                for line in f:
+                    parts = line.rstrip().split(None, 5)
+                    if len(parts) < 6:
+                        continue
+                    addr_range, perms, offset, _dev, _inode, path = parts
+                    if "x" not in perms:
+                        continue
+                    base = os.path.basename(path)
+                    if base.startswith("ld-") or base.startswith("ld.") or "ld-linux" in base:
+                        start = int(addr_range.split("-", 1)[0], 16)
+                        off = int(offset, 16)
+                        return os.path.realpath(path), start - off
+        except FileNotFoundError:
+            logging.debug("/proc/%d/maps not found", pid)
+        return None, 0
+
+    def _get_symbol_offset(self, path: str, name: str) -> Optional[int]:
+        try:
+            with open(path, "rb") as f:
+                elf = ELFFile(f)
+                for sec_name in (".dynsym", ".symtab"):
+                    sec = elf.get_section_by_name(sec_name)
+                    if sec is None:
+                        continue
+                    sym = sec.get_symbol_by_name(name)
+                    if sym:
+                        return sym[0]["st_value"]
+        except Exception as e:
+            logging.debug("Failed to read %s: %s", path, e)
+        return None
+
+    def _get_r_brk(self, pid: int) -> int:
+        path, base = self._find_loader(pid)
+        if not path:
+            return 0
+        offset = self._get_symbol_offset(path, "_r_debug")
+        if offset is None:
+            return 0
+        r_debug_addr = base + offset
+        ptr_size = ctypes.sizeof(ctypes.c_void_p)
+        brk_off = 16 if ptr_size == 8 else 8
+        try:
+            return _ptrace_peek(pid, r_debug_addr + brk_off)
+        except OSError as e:
+            logging.debug("Failed reading r_brk: %s", e)
+            return 0
+
     def _resolve_exe(self, pid: int, exe: Optional[str]) -> Optional[str]:
         """Return the executable path for ``pid`` if not provided."""
         if exe is None:
@@ -300,6 +352,71 @@ class LinuxCollector(CoverageCollector):
         except FileNotFoundError:
             logging.debug("/proc/%d/maps not found", pid)
         return None, 0
+
+    def _wait_for_libraries(
+        self, pid: int, libs: list[str], timeout: float
+    ) -> list[tuple[str, int]]:
+        modules: list[tuple[str, int]] = []
+        remaining = set(libs)
+        for lib in list(remaining):
+            path, base = self._find_library(pid, lib)
+            if path:
+                modules.append((path, base))
+                remaining.remove(lib)
+        if not remaining:
+            return modules
+
+        r_brk = self._get_r_brk(pid)
+        if r_brk == 0:
+            modules.extend(super()._wait_for_libraries(pid, list(remaining), timeout))
+            return modules
+
+        try:
+            orig = _ptrace_peek(pid, r_brk)
+            _ptrace_poke(pid, r_brk, (orig & ~0xFF) | BREAKPOINT)
+        except OSError as e:
+            logging.debug("Failed to set r_brk breakpoint: %s", e)
+            modules.extend(super()._wait_for_libraries(pid, list(remaining), timeout))
+            return modules
+
+        regs = user_regs_struct()
+        end_time = time.time() + timeout
+        while remaining and time.time() < end_time:
+            _ptrace(PTRACE_CONT, pid)
+            try:
+                wpid, status = os.waitpid(pid, 0)
+            except ChildProcessError:
+                break
+            if wpid != pid:
+                break
+            if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:
+                _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
+                pc = get_pc(regs)
+                addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
+                if addr == r_brk:
+                    for lib in list(remaining):
+                        path, base = self._find_library(pid, lib)
+                        if path:
+                            modules.append((path, base))
+                            remaining.remove(lib)
+                    set_pc(regs, addr)
+                    _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
+                    _ptrace_poke(pid, r_brk, orig)
+                    _ptrace(PTRACE_SINGLESTEP, pid)
+                    os.waitpid(pid, 0)
+                    _ptrace_poke(pid, r_brk, (orig & ~0xFF) | BREAKPOINT)
+            else:
+                break
+
+        try:
+            _ptrace_poke(pid, r_brk, orig)
+        except OSError:
+            pass
+
+        if remaining:
+            modules.extend(super()._wait_for_libraries(pid, list(remaining), max(0.0, end_time - time.time())))
+
+        return modules
 
 
 class MacOSCollector(CoverageCollector):
