@@ -29,6 +29,16 @@ def _mock_environment(monkeypatch, blocks):
     monkeypatch.setattr(collector_module, "_ptrace_poke", lambda pid, addr, data: 0)
     monkeypatch.setattr(os, "waitpid", lambda pid, opts: next(events))
 
+    def fake_wait_libs(self, pid, libs, timeout):
+        modules = []
+        for lib in libs:
+            path, base = self._find_library(pid, lib)
+            if path:
+                modules.append((path, base))
+        return modules
+
+    monkeypatch.setattr(collector_module.CoverageCollector, "_wait_for_libraries", fake_wait_libs)
+
 
 def test_linux_collector(monkeypatch, tiny_binary):
     exe = str(tiny_binary)
