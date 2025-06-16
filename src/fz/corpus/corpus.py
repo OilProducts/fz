@@ -133,6 +133,7 @@ class Corpus:
                 file_input=file_input,
                 output_bytes=0,
                 libs=libs,
+                env=None,
             )
             return crashed or timed_out
 
