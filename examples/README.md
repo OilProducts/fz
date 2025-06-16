@@ -24,3 +24,20 @@ This script will compile the target program and then run the main fuzzer against
 **Challenge:** Satisfying a simple prefix condition to reach a buffer overflow.
 
 `target2.c` introduces a condition before a stack buffer overflow: the input must start with the magic byte 'X'. If this magic byte is present, the program then attempts to copy subsequent input bytes into a small stack buffer, leading to an overflow if the input is sufficiently long. If the 'X' prefix is missing, the vulnerable code path is not reached.
+
+## Target 4: Network Service with Multiple Crashes (`examples/target4`)
+
+**Challenge:** Fuzzing a TCP server that contains several vulnerable code paths.
+
+`target4.c` listens on port 9999 and spawns a new process for each incoming
+connection. Depending on the bytes sent by the client, it can trigger distinct
+crashes:
+
+- `OVERFLOW:` followed by data overflows a small stack buffer.
+- `MAGIC1234` causes a NULL pointer dereference but requires the exact string to
+  reach this path.
+- `DIVZERO:` with the value `0` leads to a divide-by-zero crash.
+
+Every connection stays open for a couple of seconds (longer when `WAIT` is
+received) so multiple clients can be connected simultaneously.
+Run `./fuzz.sh` to build the server and fuzz it using the network harness.
