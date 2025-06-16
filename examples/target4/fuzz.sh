@@ -10,6 +10,6 @@ CORPUS_DIR="$(dirname "$0")/corpus"
 mkdir -p "$CORPUS_DIR"
 
 # Run the fuzzer using the TCP harness on port 9999
-python3 ../../main.py --target "$(dirname "$0")/target4" \
+fz --target "$(dirname "$0")/target4" \
     --tcp 127.0.0.1 9999 --iterations 10 --input-size 32 \
     --corpus-dir "$CORPUS_DIR" --output-bytes 1024 "$@"
