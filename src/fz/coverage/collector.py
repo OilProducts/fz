@@ -296,11 +296,20 @@ class LinuxCollector(CoverageCollector):
         r_debug_addr = base + offset
         ptr_size = ctypes.sizeof(ctypes.c_void_p)
         brk_off = 16 if ptr_size == 8 else 8
-        try:
-            return _ptrace_peek(pid, r_debug_addr + brk_off)
-        except OSError as e:
-            logging.debug("Failed reading r_brk: %s", e)
-            return 0
+        end_time = time.time() + 0.1
+        while True:
+            try:
+                r_brk = _ptrace_peek(pid, r_debug_addr + brk_off)
+            except OSError as e:
+                logging.debug("Failed reading r_brk: %s", e)
+                return 0
+            if r_brk != 0 or time.time() >= end_time:
+                return r_brk
+            try:
+                _ptrace(PTRACE_SINGLESTEP, pid)
+                os.waitpid(pid, 0)
+            except OSError:
+                return 0
 
     def _resolve_exe(self, pid: int, exe: Optional[str]) -> Optional[str]:
         """Return the executable path for ``pid`` if not provided."""
@@ -368,16 +377,14 @@ class LinuxCollector(CoverageCollector):
 
         r_brk = self._get_r_brk(pid)
         if r_brk == 0:
-            modules.extend(super()._wait_for_libraries(pid, list(remaining), timeout))
-            return modules
+            raise RuntimeError("unable to resolve r_brk for library instrumentation")
 
         try:
             orig = _ptrace_peek(pid, r_brk)
             _ptrace_poke(pid, r_brk, (orig & ~0xFF) | BREAKPOINT)
         except OSError as e:
             logging.debug("Failed to set r_brk breakpoint: %s", e)
-            modules.extend(super()._wait_for_libraries(pid, list(remaining), timeout))
-            return modules
+            raise RuntimeError("failed to set r_brk breakpoint") from e
 
         regs = user_regs_struct()
         end_time = time.time() + timeout
@@ -414,7 +421,7 @@ class LinuxCollector(CoverageCollector):
             pass
 
         if remaining:
-            modules.extend(super()._wait_for_libraries(pid, list(remaining), max(0.0, end_time - time.time())))
+            logging.debug("Libraries not loaded before timeout: %s", ", ".join(remaining))
 
         return modules
 
