@@ -55,4 +55,5 @@ crashes:
 
 Every connection stays open for a couple of seconds (longer when `WAIT` is
 received) so multiple clients can be connected simultaneously.
-Run `./fuzz.sh` to build the server and fuzz it using the network harness.
+Run `./fuzz.sh` to build the server and fuzz it using the new LD_PRELOAD
+network stub harness.
