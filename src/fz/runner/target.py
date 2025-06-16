@@ -19,6 +19,7 @@ def run_target(
     file_input: bool = False,
     output_bytes: int = 0,
     libs: Optional[list[str]] = None,
+    env: Optional[dict[str, str]] = None,
 ) -> Tuple[Set[tuple[tuple[str, int], tuple[str, int]]], bool, bool, bytes, bytes]:
     """Execute *target* with *data* once and return execution results."""
     coverage_set: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
@@ -26,6 +27,8 @@ def run_target(
     stderr_file = tempfile.TemporaryFile()
     filename = None
     proc = None
+    if env is None:
+        env = os.environ.copy()
     try:
         if file_input:
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -48,6 +51,7 @@ def run_target(
             stdout=stdout_file,
             stderr=stderr_file,
             preexec_fn=_trace_me,
+            env=env,
         )
         os.waitpid(proc.pid, 0)
 
