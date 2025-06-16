@@ -4,6 +4,9 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <stddef.h>
+#include <stdlib.h>
+#include <time.h>
+
 
 static int dummy_listen_fd = 10000;
 static int dummy_conn_fd = 10001;
@@ -32,8 +35,7 @@ int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t
 int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
     (void)sockfd; (void)addr; (void)addrlen;
     if (accepted) {
-        errno = EAGAIN;
-        return -1;
+        exit(0);
     }
     accepted = 1;
     return dummy_conn_fd;
@@ -70,3 +72,23 @@ int close(int fd) {
     }
     return real_close(fd);
 }
+
+pid_t fork(void) {
+    return 0;
+}
+
+unsigned int sleep(unsigned int seconds) {
+    (void)seconds;
+    return 0;
+}
+
+int usleep(useconds_t usec) {
+    (void)usec;
+    return 0;
+}
+
+int nanosleep(const struct timespec *req, struct timespec *rem) {
+    (void)req; (void)rem;
+    return 0;
+}
+
