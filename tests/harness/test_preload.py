@@ -32,7 +32,6 @@ def build_stub(root: Path) -> Path:
 def test_preload_harness(tmp_path):
     root = Path(__file__).resolve().parents[2]
     lib = build_stub(root)
-    target = build_target(tmp_path)
     harness = PreloadHarness(str(lib))
     cov, crashed, to, out, err = harness.run(str(target), b"ping", 1.0, output_bytes=10)
     assert not to
