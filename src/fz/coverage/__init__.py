@@ -8,6 +8,7 @@ current platform.
 import platform
 
 from .collector import CoverageCollector, LinuxCollector, MacOSCollector
+from .gdb_collector import QemuGdbCollector
 from .cfg import ControlFlowGraph
 from .utils import get_possible_edges
 from .visualize import main as visualize_cfg
@@ -19,11 +20,18 @@ def get_collector() -> CoverageCollector:
         return MacOSCollector()
     return LinuxCollector()
 
+
+def get_gdb_collector(host: str = "127.0.0.1", port: int = 1234, arch: str = "x86_64") -> CoverageCollector:
+    """Return a :class:`QemuGdbCollector` instance."""
+    return QemuGdbCollector(host, port, arch)
+
 __all__ = [
     "CoverageCollector",
     "get_collector",
     "ControlFlowGraph",
     "get_possible_edges",
     "visualize_cfg",
+    "QemuGdbCollector",
+    "get_gdb_collector",
 ]
 

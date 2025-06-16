@@ -29,7 +29,7 @@ class Fuzzer:
         self.corpus = Corpus(corpus_dir, output_bytes)
         self.cfg = ControlFlowGraph()
 
-    def _run_once(self, target, data, timeout, file_input=False, network=None, libs=None):
+    def _run_once(self, target, data, timeout, file_input=False, network=None, libs=None, qemu_user=None, gdb_port=1234, arch=None):
         """Execute target once and record coverage."""
         coverage_set = set()
         if network:
@@ -47,6 +47,9 @@ class Fuzzer:
                 file_input=file_input,
                 output_bytes=self.corpus.output_bytes,
                 libs=libs,
+                qemu_user=qemu_user,
+                gdb_port=gdb_port,
+                arch=arch,
             )
             logging.debug(
                 "Run returned %d coverage entries", len(coverage_set)
@@ -124,6 +127,9 @@ class Fuzzer:
                     args.file_input,
                     harness,
                     args.instrument_libs,
+                    qemu_user=args.qemu_user,
+                    gdb_port=args.gdb_port,
+                    arch=args.arch,
                 )
                 mutator.record_result(data, coverage_set, interesting)
                 if interesting:
@@ -312,6 +318,21 @@ def parse_args():
         metavar="LIB",
         default=[],
         help="Names of shared libraries to instrument for coverage",
+    )
+    parser.add_argument(
+        "--qemu-user",
+        help="Path to qemu-user binary for emulation",
+    )
+    parser.add_argument(
+        "--gdb-port",
+        type=int,
+        default=1234,
+        help="GDB port for qemu-user",
+    )
+    parser.add_argument(
+        "--arch",
+        default="x86_64",
+        help="Target architecture when using qemu-user",
     )
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument(
