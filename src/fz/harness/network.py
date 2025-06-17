@@ -41,7 +41,7 @@ class NetworkHarness:
         Returns
         -------
         tuple
-            ``(coverage_set, crashed, timed_out, stdout, stderr)``
+            ``(coverage_set, crashed, timed_out, exit_code, stdout, stderr)``
         """
         logging.debug("Launching network target: %s", target)
         stdout_file = tempfile.TemporaryFile()
@@ -72,6 +72,7 @@ class NetworkHarness:
 
         crashed = False
         timed_out = False
+        exit_code = None
         try:
             logging.debug("Sending %d bytes", len(data))
             sock.sendall(data)
@@ -83,7 +84,8 @@ class NetworkHarness:
             logging.debug("Collected %d coverage entries", len(coverage_set))
             try:
                 proc.wait(timeout=timeout)
-                crashed = proc.returncode not in (0, None)
+                exit_code = proc.returncode
+                crashed = exit_code is not None and exit_code < 0
             except subprocess.TimeoutExpired:
                 proc.kill()
                 timed_out = True
@@ -98,4 +100,4 @@ class NetworkHarness:
         stdout_file.close()
         stderr_file.close()
         logging.debug("Network run complete with %d coverage entries", len(coverage_set))
-        return coverage_set, crashed, timed_out, stdout_data, stderr_data
+        return coverage_set, crashed, timed_out, exit_code, stdout_data, stderr_data

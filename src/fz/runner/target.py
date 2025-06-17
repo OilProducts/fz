@@ -20,9 +20,23 @@ def run_target(
     output_bytes: int = 0,
     libs: Optional[list[str]] = None,
     env: Optional[dict[str, str]] = None,
-) -> Tuple[Set[tuple[tuple[str, int], tuple[str, int]]], bool, bool, bytes, bytes]:
-    """Execute *target* with *data* once and return execution results."""
+) -> Tuple[
+    Set[tuple[tuple[str, int], tuple[str, int]]],
+    bool,
+    bool,
+    int | None,
+    bytes,
+    bytes,
+]:
+    """Execute *target* with *data* once and return execution results.
+
+    Returns
+    -------
+    Set[tuple], bool, bool, int | None, bytes, bytes
+        ``(coverage_set, crashed, timed_out, exit_code, stdout, stderr)``
+    """
     coverage_set: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
+    exit_code: int | None = None
     stdout_file = tempfile.TemporaryFile()
     stderr_file = tempfile.TemporaryFile()
     filename = None
@@ -87,7 +101,8 @@ def run_target(
         timed_out = False
         try:
             proc.wait(timeout=timeout)
-            crashed = proc.returncode not in (0, None)
+            exit_code = proc.returncode
+            crashed = exit_code is not None and exit_code < 0
         except subprocess.TimeoutExpired:
             proc.kill()
             timed_out = True
@@ -107,4 +122,4 @@ def run_target(
         stdout_file.close()
         stderr_file.close()
 
-    return coverage_set, crashed, timed_out, stdout_data, stderr_data
+    return coverage_set, crashed, timed_out, exit_code, stdout_data, stderr_data

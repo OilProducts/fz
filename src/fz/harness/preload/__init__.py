@@ -17,7 +17,14 @@ class PreloadHarness:
         timeout: float,
         output_bytes: int = 0,
         libs: Optional[list[str]] = None,
-    ) -> Tuple[Set[tuple], bool, bool, bytes, bytes]:
+    ) -> Tuple[Set[tuple], bool, bool, int | None, bytes, bytes]:
+        """Execute *target* under LD_PRELOAD and collect coverage.
+
+        Returns
+        -------
+        tuple
+            ``(coverage_set, crashed, timed_out, exit_code, stdout, stderr)``
+        """
         env = os.environ.copy()
         var = "DYLD_INSERT_LIBRARIES" if sys.platform == "darwin" else "LD_PRELOAD"
         env[var] = self.library

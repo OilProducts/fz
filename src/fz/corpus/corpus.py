@@ -28,6 +28,7 @@ class Corpus:
         category: str = "interesting",
         stdout: bytes = b"",
         stderr: bytes = b"",
+        exit_code: int | None = None,
     ):
         """Persist *data* and associated *coverage*.
 
@@ -41,6 +42,8 @@ class Corpus:
             "coverage": sorted(coverage),
             "data": base64.b64encode(data).decode("ascii"),
         }
+        if exit_code is not None:
+            record["exit_code"] = exit_code
         if stdout and self.output_bytes > 0:
             record["stdout"] = base64.b64encode(stdout[: self.output_bytes]).decode("ascii")
         if stderr and self.output_bytes > 0:
@@ -49,9 +52,10 @@ class Corpus:
             record["type"] = category
 
         if category == "interesting":
-            cov_hash = hashlib.sha1(
-                ",".join(str(c) for c in record["coverage"]).encode()
-            ).hexdigest()
+            hash_input = ",".join(str(c) for c in record["coverage"]).encode()
+            if exit_code is not None:
+                hash_input += f":{exit_code}".encode()
+            cov_hash = hashlib.sha1(hash_input).hexdigest()
             path = os.path.join(self.directory, cov_hash + ".json")
 
             if cov_hash in self.coverage_hashes or os.path.exists(path):
@@ -121,12 +125,12 @@ class Corpus:
 
         def reproduces_crash(inp: bytes) -> bool:
             if network:
-                _cov, crashed, timed_out, _stdout, _stderr = network.run(
+                _cov, crashed, timed_out, _exit, _stdout, _stderr = network.run(
                     target, inp, timeout, libs=libs
                 )
                 return crashed or timed_out
 
-            cov, crashed, timed_out, _stdout, _stderr = run_target(
+            cov, crashed, timed_out, _exit, _stdout, _stderr = run_target(
                 target,
                 inp,
                 timeout,
