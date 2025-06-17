@@ -4,3 +4,7 @@
 # Ignore build artifacts
 *.egg-info/
 /src/fz/harness/preload/build/
+
+# Python bytecode and cache
+*.pyc
+__pycache__/
