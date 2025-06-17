@@ -34,14 +34,14 @@ class Fuzzer:
         """Execute target once and record coverage."""
         coverage_set = set()
         if network:
-            coverage_set, crashed, timed_out, stdout_data, stderr_data = network.run(
+            coverage_set, crashed, timed_out, exit_code, stdout_data, stderr_data = network.run(
                 target, data, timeout, self.corpus.output_bytes, libs=libs
             )
             logging.debug(
                 "Network run returned %d coverage entries", len(coverage_set)
             )
         else:
-            coverage_set, crashed, timed_out, stdout_data, stderr_data = run_target(
+            coverage_set, crashed, timed_out, exit_code, stdout_data, stderr_data = run_target(
                 target,
                 data,
                 timeout,
@@ -62,6 +62,7 @@ class Fuzzer:
                 prefix,
                 stdout_data,
                 stderr_data,
+                exit_code=exit_code,
             )
             if saved:
                 self.corpus.minimize_input(
@@ -74,7 +75,12 @@ class Fuzzer:
                 )
 
         interesting, path = self.corpus.save_input(
-            data, coverage_set, "interesting", stdout_data, stderr_data
+            data,
+            coverage_set,
+            "interesting",
+            stdout_data,
+            stderr_data,
+            exit_code=exit_code,
         )
         if interesting:
             self.corpus.minimize_input(

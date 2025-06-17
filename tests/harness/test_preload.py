@@ -34,10 +34,12 @@ def test_preload_harness(tmp_path):
     lib = build_stub(root)
     harness = PreloadHarness(str(lib))
     target = build_target(tmp_path)
-    cov, crashed, to, out, err = harness.run(str(target), b"ping", 1.0, output_bytes=10)
+    cov, crashed, to, rc, out, err = harness.run(str(target), b"ping", 1.0, output_bytes=10)
     assert not to
+    assert isinstance(rc, int)
     assert isinstance(cov, set)
-    cov, crashed, to, out, err = harness.run(str(target), b"OVERFLOW:AAAA", 1.0)
+    cov, crashed, to, rc, out, err = harness.run(str(target), b"OVERFLOW:AAAA", 1.0)
     assert crashed
+    assert rc is not None and rc < 0
 
 
