@@ -38,6 +38,7 @@ def run_target(
     Set[tuple], bool, bool, int | None, bytes, bytes
         ``(coverage_set, crashed, timed_out, exit_code, stdout, stderr)``
     """
+    logging.debug("run_target called with: target=%s, file_input=%s, libs=%s, qemu_user=%s, gdb_port=%d, arch=%s", target, file_input, libs, qemu_user, gdb_port, arch)
     coverage_set: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
     exit_code: int | None = None
     stdout_file = tempfile.TemporaryFile()
@@ -59,6 +60,7 @@ def run_target(
             stdin_pipe = subprocess.PIPE
         if qemu_user:
             argv = [qemu_user, "-g", str(gdb_port), target] + argv[1:]
+        logging.debug("Popen argv: %s", argv)
         logging.debug("Launching target: %s", " ".join(argv))
 
         preexec = None
@@ -93,8 +95,10 @@ def run_target(
         logging.debug("Collecting coverage from pid %d", proc.pid)
         if qemu_user:
             collector = coverage.get_gdb_collector("127.0.0.1", gdb_port, arch or "x86_64")
+            logging.debug("Using QemuGdbCollector for coverage.")
         else:
             collector = coverage.get_collector()
+            logging.debug("Using native collector: %s", collector.__class__.__name__)
         try:
             coverage_set = collector.collect_coverage(
                 proc.pid,
@@ -139,4 +143,5 @@ def run_target(
         stdout_file.close()
         stderr_file.close()
 
+    logging.debug("run_target returning: coverage_set size=%d, crashed=%s, timed_out=%s, exit_code=%s", len(coverage_set), crashed, timed_out, exit_code)
     return coverage_set, crashed, timed_out, exit_code, stdout_data, stderr_data

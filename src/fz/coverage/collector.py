@@ -65,9 +65,16 @@ class CoverageCollector(ABC):
             if remaining:
                 try:
                     _ptrace(PTRACE_SINGLESTEP, pid)
+                except OSError as e:
+                    logging.warning("PTRACE_SINGLESTEP failed for pid %d while waiting for libraries (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                    break
+                try:
                     os.waitpid(pid, 0)
                 except OSError as e:
-                    logging.debug("Failed waiting for libraries: %s", e)
+                    logging.warning("os.waitpid failed for pid %d while waiting for libraries (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                    break
+                except ChildProcessError as e: # Already handled, but good to be explicit
+                    logging.debug("Child process %d disappeared while waiting for libraries: %s", pid, e)
                     break
         for lib in remaining:
             logging.debug("Library %s not found in process", lib)
@@ -110,9 +117,20 @@ class CoverageCollector(ABC):
         libs = libs or []
 
         if not already_traced:
-            _ptrace(PTRACE_ATTACH, pid)
-            os.waitpid(pid, 0)
-            logging.debug("Attached to pid %d", pid)
+            try:
+                _ptrace(PTRACE_ATTACH, pid)
+                logging.debug("Attached to pid %d", pid)
+            except OSError as e:
+                logging.error("PTRACE_ATTACH failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                # If attach fails, we probably can't continue, but let it try and fail later if needed.
+                pass # Or raise an error here
+            try:
+                os.waitpid(pid, 0) # Wait for SIGSTOP after attach
+            except OSError as e:
+                logging.warning("os.waitpid after PTRACE_ATTACH failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+            except ChildProcessError as e:
+                 logging.warning("Child process %d disappeared after PTRACE_ATTACH: %s", pid, e)
+
 
         modules = []
         base = self._get_image_base(pid, exe) if exe else 0
@@ -126,41 +144,70 @@ class CoverageCollector(ABC):
             modules.extend(self._wait_for_libraries(pid, libs, timeout))
 
         logging.debug("Inserting breakpoints for block coverage")
-        blocks = []
+        blocks_for_module_map = {}
         for path, mbase in modules:
-            for b in get_basic_blocks(path):
-                blocks.append((path, mbase, b))
+            current_blocks = get_basic_blocks(path)
+            blocks_for_module_map[(path, mbase)] = current_blocks
+            logging.debug("Found %d basic blocks for %s", len(current_blocks), path)
+
         breakpoints = {}
-        for path, mbase, off in blocks:
-            b = mbase + off
-            try:
-                if ARCH in ("aarch64", "arm64"):
+        for (path, mbase), module_blocks in blocks_for_module_map.items():
+            for off in module_blocks:
+                b = mbase + off
+                logging.debug("Inserting breakpoint at %#x for module %s (base %#x, offset %#x)", b, path, mbase, off)
+                try:
+                    if ARCH in ("aarch64", "arm64"):
                     word_addr = b & ~7
-                    offset = b & 7
+                    bp_offset_in_word = b & 7
                     if word_addr not in word_cache:
-                        orig_word = _ptrace_peek(pid, word_addr)
+                        try:
+                            orig_word = _ptrace_peek(pid, word_addr)
+                        except OSError as e:
+                            logging.warning("Failed to peek original instruction at %#x (errno %d: %s)", word_addr, e.errno, os.strerror(e.errno))
+                            continue
                         patched_word = orig_word
                         patches = set()
                     else:
                         orig_word, patched_word, patches = word_cache[word_addr]
-                    if offset == 0:
+                    if bp_offset_in_word == 0:
                         patched_word = (patched_word & ~0xFFFFFFFF) | BREAKPOINT
                     else:
                         patched_word = (patched_word & 0xFFFFFFFF) | (BREAKPOINT << 32)
-                    _ptrace_poke(pid, word_addr, patched_word)
-                    patches.add(offset)
+                    try:
+                        _ptrace_poke(pid, word_addr, patched_word)
+                    except OSError as e:
+                        logging.warning("Failed to poke breakpoint at %#x (errno %d: %s)", word_addr, e.errno, os.strerror(e.errno))
+                        continue
+                    patches.add(bp_offset_in_word)
                     word_cache[word_addr] = (orig_word, patched_word, patches)
-                    breakpoints[b] = (word_addr, offset, path, mbase)
+                    breakpoints[b] = (word_addr, bp_offset_in_word, path, mbase)
                 else:
-                    orig = _ptrace_peek(pid, b)
+                    try:
+                        orig = _ptrace_peek(pid, b)
+                    except OSError as e:
+                        logging.warning("Failed to peek original instruction at %#x (errno %d: %s)", b, e.errno, os.strerror(e.errno))
+                        continue
                     breakpoints[b] = (orig, path, mbase)
-                    _ptrace_poke(pid, b, (orig & ~0xFF) | BREAKPOINT)
-                logging.debug("Breakpoint inserted at %#x", b)
+                    try:
+                        _ptrace_poke(pid, b, (orig & ~0xFF) | BREAKPOINT)
+                    except OSError as e:
+                        logging.warning("Failed to poke breakpoint at %#x (errno %d: %s)", b, e.errno, os.strerror(e.errno))
+                        continue
             except OSError as e:
-                logging.debug("Failed to insert breakpoint at %#x: %s", b, e)
+                # This logging is for other OSErrors not caught by specific peek/poke errors
+                logging.warning("Failed to insert breakpoint at %#x: %s", b, e)
                 continue
+        try:
+            _ptrace(PTRACE_CONT, pid)
+        except OSError as e:
+            logging.error("Initial PTRACE_CONT failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+            # Attempt to detach and return if cont fails
+            try:
+                _ptrace(PTRACE_DETACH, pid)
+            except OSError as e_detach:
+                logging.error("PTRACE_DETACH also failed for pid %d (errno %d: %s)", pid, e_detach.errno, os.strerror(e_detach.errno))
+            return coverage # Return whatever was collected so far, likely empty
 
-        _ptrace(PTRACE_CONT, pid)
         regs = user_regs_struct()
         end_time = time.time() + timeout * 2
         while True:
@@ -176,9 +223,14 @@ class CoverageCollector(ABC):
                 time.sleep(0)
                 continue
             if os.WIFEXITED(status) or os.WIFSIGNALED(status):
+                logging.debug("Process exited or signalled.")
                 break
             if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:
-                _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
+                try:
+                    _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
+                except OSError as e:
+                    logging.warning("PTRACE_GETREGS failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                    break # Difficult to continue if we can't get PC
                 pc = get_pc(regs)
                 addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
                 if addr in breakpoints:
@@ -191,7 +243,8 @@ class CoverageCollector(ABC):
                     if prev_addr is not None:
                         coverage.add((prev_addr, curr))
                     prev_addr = curr
-                    logging.debug("Hit breakpoint at %#x", addr)
+                    # Effective "Hit breakpoint" log
+                    logging.debug("Hit breakpoint at %#x for module %s (offset %#x)", addr, mod_path, addr - mod_base)
                     if ARCH in ("aarch64", "arm64"):
                         orig_word, patched_word, patches = word_cache[word_addr]
                         if offset == 0:
@@ -199,20 +252,46 @@ class CoverageCollector(ABC):
                         else:
                             patched_word = (patched_word & 0xFFFFFFFF) | (orig_word & 0xFFFFFFFF00000000)
                         patches.discard(offset)
-                        if not patches:
-                            _ptrace_poke(pid, word_addr, orig_word)
-                            del word_cache[word_addr]
-                        else:
-                            _ptrace_poke(pid, word_addr, patched_word)
-                            word_cache[word_addr] = (orig_word, patched_word, patches)
+                        try:
+                            if not patches:
+                                _ptrace_poke(pid, word_addr, orig_word)
+                                del word_cache[word_addr]
+                            else:
+                                _ptrace_poke(pid, word_addr, patched_word)
+                                word_cache[word_addr] = (orig_word, patched_word, patches)
+                        except OSError as e:
+                            logging.warning("Failed to restore instruction (poke) at %#x after breakpoint hit (errno %d: %s)", word_addr, e.errno, os.strerror(e.errno))
                         set_pc(regs, addr)
                     else:
-                        _ptrace_poke(pid, addr, orig)
+                        try:
+                            _ptrace_poke(pid, addr, orig)
+                        except OSError as e:
+                            logging.warning("Failed to restore instruction (poke) at %#x after breakpoint hit (errno %d: %s)", addr, e.errno, os.strerror(e.errno))
                         set_pc(regs, addr)
-                    _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
-                    _ptrace(PTRACE_SINGLESTEP, pid)
-                    os.waitpid(pid, 0)
-            _ptrace(PTRACE_CONT, pid)
+                    try:
+                        _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
+                    except OSError as e:
+                        logging.warning("PTRACE_SETREGS failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                        # Try to continue without setting PC if this fails, might lead to issues
+                    try:
+                        _ptrace(PTRACE_SINGLESTEP, pid)
+                    except OSError as e:
+                        logging.warning("PTRACE_SINGLESTEP failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                        break # If singlestep fails, we can't reliably continue
+                    try:
+                        os.waitpid(pid, 0) # Wait for trap after singlestep
+                    except OSError as e:
+                        logging.warning("os.waitpid after PTRACE_SINGLESTEP failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                        break
+                    except ChildProcessError as e:
+                        logging.debug("Child process %d disappeared after PTRACE_SINGLESTEP: %s", pid, e)
+                        break
+            try:
+                _ptrace(PTRACE_CONT, pid)
+            except OSError as e:
+                logging.warning("PTRACE_CONT in loop failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                break # Exit loop if we can't continue the process
+        logging.debug("Coverage collection loop ended. prev_addr: %s, coverage size: %d", prev_addr, len(coverage))
 
         try:
             for addr, info in breakpoints.items():
@@ -238,13 +317,15 @@ class CoverageCollector(ABC):
                     if e.errno == errno.ESRCH:
                         logging.debug("Process %d disappeared while restoring breakpoints", pid)
                         break
-                    logging.debug("Failed to restore breakpoint at %#x: %s", addr, e)
-            _ptrace(PTRACE_DETACH, pid)
-            logging.debug("Detached from pid %d", pid)
-        except OSError as e:
-            logging.debug("Failed to detach from pid %d: %s", pid, e)
+                    # Simplified logging for restore, specific peek/poke handled during insertion/hit
+                    logging.warning("Failed to restore breakpoint at %#x (errno %d: %s)", addr, e.errno, os.strerror(e.errno))
+            try:
+                _ptrace(PTRACE_DETACH, pid)
+                logging.debug("Detached from pid %d", pid)
+            except OSError as e:
+                logging.warning("PTRACE_DETACH failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
 
-        logging.debug("Collected %d basic block transitions", len(coverage))
+        logging.debug("Returning %d coverage transitions.", len(coverage))
         return coverage
 
 
@@ -301,14 +382,22 @@ class LinuxCollector(CoverageCollector):
             try:
                 r_brk = _ptrace_peek(pid, r_debug_addr + brk_off)
             except OSError as e:
-                logging.debug("Failed reading r_brk: %s", e)
+                logging.warning("PTRACE_PEEKTEXT failed for pid %d at %#x while getting r_brk (errno %d: %s)", pid, r_debug_addr + brk_off, e.errno, os.strerror(e.errno))
                 return 0
             if r_brk != 0 or time.time() >= end_time:
                 return r_brk
             try:
                 _ptrace(PTRACE_SINGLESTEP, pid)
+            except OSError as e:
+                logging.warning("PTRACE_SINGLESTEP failed for pid %d in _get_r_brk (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                return 0
+            try:
                 os.waitpid(pid, 0)
-            except OSError:
+            except OSError as e:
+                logging.warning("os.waitpid failed for pid %d in _get_r_brk (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                return 0
+            except ChildProcessError as e:
+                logging.debug("Child process %d disappeared in _get_r_brk: %s", pid, e)
                 return 0
 
     def _resolve_exe(self, pid: int, exe: Optional[str]) -> Optional[str]:
@@ -381,23 +470,41 @@ class LinuxCollector(CoverageCollector):
 
         try:
             orig = _ptrace_peek(pid, r_brk)
+        except OSError as e:
+            logging.warning("PTRACE_PEEKTEXT failed for pid %d at r_brk %#x (errno %d: %s)", pid, r_brk, e.errno, os.strerror(e.errno))
+            raise RuntimeError(f"failed to peek r_brk for library instrumentation (pid {pid}, addr {r_brk:#x})") from e
+        try:
             _ptrace_poke(pid, r_brk, (orig & ~0xFF) | BREAKPOINT)
         except OSError as e:
-            logging.debug("Failed to set r_brk breakpoint: %s", e)
-            raise RuntimeError("failed to set r_brk breakpoint") from e
+            logging.warning("PTRACE_POKETEXT failed for pid %d at r_brk %#x (errno %d: %s)", pid, r_brk, e.errno, os.strerror(e.errno))
+            raise RuntimeError(f"failed to set r_brk breakpoint for library instrumentation (pid {pid}, addr {r_brk:#x})") from e
 
         regs = user_regs_struct()
         end_time = time.time() + timeout
         while remaining and time.time() < end_time:
-            _ptrace(PTRACE_CONT, pid)
+            try:
+                _ptrace(PTRACE_CONT, pid)
+            except OSError as e:
+                logging.warning("PTRACE_CONT failed for pid %d in _wait_for_libraries (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                break
             try:
                 wpid, status = os.waitpid(pid, 0)
-            except ChildProcessError:
+            except ChildProcessError as e:
+                logging.debug("Child process %d disappeared in _wait_for_libraries: %s", pid, e)
                 break
+            except OSError as e:
+                logging.warning("os.waitpid failed for pid %d in _wait_for_libraries (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                break
+
             if wpid != pid:
+                logging.debug("Unexpected wpid %d (expected %d) in _wait_for_libraries", wpid, pid)
                 break
             if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:
-                _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
+                try:
+                    _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
+                except OSError as e:
+                    logging.warning("PTRACE_GETREGS failed for pid %d in _wait_for_libraries (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                    break
                 pc = get_pc(regs)
                 addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
                 if addr == r_brk:
@@ -406,19 +513,44 @@ class LinuxCollector(CoverageCollector):
                         if path:
                             modules.append((path, base))
                             remaining.remove(lib)
+                            logging.debug("%s loaded at %#x (via r_brk)", path, base)
                     set_pc(regs, addr)
-                    _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
-                    _ptrace_poke(pid, r_brk, orig)
-                    _ptrace(PTRACE_SINGLESTEP, pid)
-                    os.waitpid(pid, 0)
-                    _ptrace_poke(pid, r_brk, (orig & ~0xFF) | BREAKPOINT)
-            else:
+                    try:
+                        _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
+                    except OSError as e:
+                        logging.warning("PTRACE_SETREGS failed for pid %d at r_brk restore (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                        # Attempt to continue, but state might be inconsistent
+                    try:
+                        _ptrace_poke(pid, r_brk, orig) # Restore original instruction at r_brk
+                    except OSError as e:
+                        logging.warning("PTRACE_POKETEXT failed to restore original r_brk instruction for pid %d at %#x (errno %d: %s)", pid, r_brk, e.errno, os.strerror(e.errno))
+                        break # Critical, can't reliably continue stepping here
+                    try:
+                        _ptrace(PTRACE_SINGLESTEP, pid)
+                    except OSError as e:
+                        logging.warning("PTRACE_SINGLESTEP failed for pid %d after r_brk hit (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                        break
+                    try:
+                        os.waitpid(pid, 0) # Wait for trap after singlestep
+                    except OSError as e:
+                        logging.warning("os.waitpid after PTRACE_SINGLESTEP (r_brk) failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+                        break
+                    except ChildProcessError as e:
+                        logging.debug("Child process %d disappeared after PTRACE_SINGLESTEP (r_brk): %s", pid, e)
+                        break
+                    try:
+                        _ptrace_poke(pid, r_brk, (orig & ~0xFF) | BREAKPOINT) # Re-set r_brk breakpoint
+                    except OSError as e:
+                        logging.warning("PTRACE_POKETEXT failed to re-set r_brk breakpoint for pid %d at %#x (errno %d: %s)", pid, r_brk, e.errno, os.strerror(e.errno))
+                        break # Critical, can't ensure future library loads are caught
+            else: # Process stopped for reason other than SIGTRAP at r_brk
+                logging.debug("Process %d stopped in _wait_for_libraries, not at r_brk. Status: %x", pid, status)
                 break
 
         try:
-            _ptrace_poke(pid, r_brk, orig)
-        except OSError:
-            pass
+            _ptrace_poke(pid, r_brk, orig) # Ensure original instruction is restored if loop terminates early
+        except OSError as e:
+            logging.warning("PTRACE_POKETEXT failed to restore r_brk (cleanup) for pid %d at %#x (errno %d: %s)", pid, r_brk, e.errno, os.strerror(e.errno))
 
         if remaining:
             logging.debug("Libraries not loaded before timeout: %s", ", ".join(remaining))

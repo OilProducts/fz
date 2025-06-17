@@ -126,26 +126,43 @@ class QemuGdbCollector(CoverageCollector):
             raise RuntimeError("Executable path required")
         gdb = GDBRemote(self.host, self.port)
         blocks = get_basic_blocks(exe)
+        logging.debug("Found %d basic blocks for %s", len(blocks), exe)
         base = 0
         breakpoints = {}
         bp_size = 4 if self.arch.startswith("aarch64") or self.arch == "arm64" else 1
         for off in blocks:
             addr = base + off
+            logging.debug("Setting GDB breakpoint at %#x for %s", addr, exe)
             try:
                 orig = gdb.read_memory(addr, bp_size)
-                gdb.write_memory(addr, self.BREAKPOINT.to_bytes(bp_size, "little"))
-                breakpoints[addr] = orig
             except Exception as e:
-                logging.debug("Failed to set breakpoint at %#x: %s", addr, e)
-        gdb.continue_()
+                logging.warning("GDB failed to read memory at %#x: %s", addr, e)
+                continue
+            try:
+                gdb.write_memory(addr, self.BREAKPOINT.to_bytes(bp_size, "little"))
+            except Exception as e:
+                logging.warning("GDB failed to write memory at %#x: %s", addr, e)
+                continue
+            breakpoints[addr] = orig
+        try:
+            gdb.continue_()
+        except Exception as e:
+            logging.warning("GDB failed to continue: %s", e)
+            gdb.close()
+            return set()
         end_time = time.time() + timeout * 2
         coverage: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
         prev = None
         while time.time() < end_time:
             reason = gdb._recv_packet()
             if not reason.startswith("S"):
+                logging.debug("GDB stop reason: %s", reason)
                 break
-            regs = gdb.read_registers()
+            try:
+                regs = gdb.read_registers()
+            except Exception as e:
+                logging.warning("GDB failed to read registers: %s", e)
+                break
             if self.arch.startswith("aarch64") or self.arch == "arm64":
                 pc = int.from_bytes(regs[32*8:33*8], "little")
                 step_back = 4
@@ -154,21 +171,48 @@ class QemuGdbCollector(CoverageCollector):
                 step_back = 1
             addr = pc - step_back
             if addr not in breakpoints:
+                logging.warning("GDB hit unexpected breakpoint at %#x (PC=%#x)", addr, pc)
                 break
+            logging.debug("GDB hit breakpoint at %#x (PC=%#x)", addr, pc)
             curr = (exe, addr - base)
             if prev is not None:
                 coverage.add((prev, curr))
             prev = curr
             orig = breakpoints[addr]
-            gdb.write_memory(addr, orig)
-            gdb.step()
-            gdb.write_memory(addr, self.BREAKPOINT.to_bytes(bp_size, "little"))
-            gdb.continue_()
+            try:
+                gdb.write_memory(addr, orig)
+            except Exception as e:
+                logging.warning("GDB failed to restore original instruction at %#x: %s", addr, e)
+                # Attempt to remove breakpoint anyway
+                try:
+                    gdb.remove_breakpoint(addr)
+                except Exception as re:
+                    logging.warning("GDB failed to remove breakpoint at %#x after write failure: %s", addr, re)
+                break
+            try:
+                gdb.step()
+            except Exception as e:
+                logging.warning("GDB failed to step: %s", e)
+                break
+            try:
+                gdb.write_memory(addr, self.BREAKPOINT.to_bytes(bp_size, "little"))
+            except Exception as e:
+                logging.warning("GDB failed to re-set breakpoint at %#x: %s", addr, e)
+                break
+            try:
+                gdb.continue_()
+            except Exception as e:
+                logging.warning("GDB failed to continue after breakpoint: %s", e)
+                break
         for addr, orig in breakpoints.items():
             try:
                 gdb.write_memory(addr, orig)
-            except Exception:
-                pass
-        gdb.continue_()
+            except Exception as e:
+                logging.warning("GDB failed to restore breakpoint at %#x during cleanup: %s", addr, e)
+        try:
+            gdb.continue_() # Ensure the target is running if we broke out of the loop early
+        except Exception as e:
+            logging.debug("GDB continue failed during cleanup: %s", e)
         gdb.close()
+        logging.debug("QemuGdbCollector returning %d coverage transitions.", len(coverage))
         return coverage
