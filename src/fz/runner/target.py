@@ -19,6 +19,9 @@ def run_target(
     file_input: bool = False,
     output_bytes: int = 0,
     libs: Optional[list[str]] = None,
+    qemu_user: Optional[str] = None,
+    gdb_port: int = 1234,
+    arch: Optional[str] = None,
     env: Optional[dict[str, str]] = None,
 ) -> Tuple[
     Set[tuple[tuple[str, int], tuple[str, int]]],
@@ -54,20 +57,27 @@ def run_target(
         else:
             argv = [target]
             stdin_pipe = subprocess.PIPE
+        if qemu_user:
+            argv = [qemu_user, "-g", str(gdb_port), target] + argv[1:]
         logging.debug("Launching target: %s", " ".join(argv))
 
-        def _trace_me():
-            libc.ptrace(PTRACE_TRACEME, 0, None, None)
+        preexec = None
+        if not qemu_user:
+            def _trace_me():
+                libc.ptrace(PTRACE_TRACEME, 0, None, None)
+
+            preexec = _trace_me
 
         proc = subprocess.Popen(
             argv,
             stdin=stdin_pipe,
             stdout=stdout_file,
             stderr=stderr_file,
-            preexec_fn=_trace_me,
+            preexec_fn=preexec,
             env=env,
         )
-        os.waitpid(proc.pid, 0)
+        if not qemu_user:
+            os.waitpid(proc.pid, 0)
 
         if not file_input and proc.stdin:
             try:
@@ -81,10 +91,17 @@ def run_target(
                     logging.debug("Broken pipe when closing stdin")
 
         logging.debug("Collecting coverage from pid %d", proc.pid)
-        collector = coverage.get_collector()
+        if qemu_user:
+            collector = coverage.get_gdb_collector("127.0.0.1", gdb_port, arch or "x86_64")
+        else:
+            collector = coverage.get_collector()
         try:
             coverage_set = collector.collect_coverage(
-                proc.pid, timeout, target, already_traced=True, libs=libs
+                proc.pid,
+                timeout,
+                target,
+                already_traced=not qemu_user,
+                libs=libs,
             )
         except FileNotFoundError:
             logging.debug(
