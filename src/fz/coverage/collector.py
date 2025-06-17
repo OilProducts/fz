@@ -218,6 +218,30 @@ class CoverageCollector(ABC):
                 logging.error("PTRACE_DETACH also failed for pid %d (errno %d: %s)", pid, e_detach.errno, os.strerror(e_detach.errno))
             return coverage
 
+        logging.debug("Attempting initial blocking wait for pid %d immediately after PTRACE_CONT", pid)
+        try:
+            initial_wpid, initial_status = os.waitpid(pid, 0)
+            logging.info("Initial blocking wait for pid %d returned: wpid=%s, status=%s (raw int: %d)", pid, initial_wpid, hex(initial_status), initial_status)
+            if os.WIFSTOPPED(initial_status):
+                # Attempt to get signal name, fall back to raw number if not in signal.Signals
+                stop_sig = os.WSTOPSIG(initial_status)
+                sig_name = signal.Signals(stop_sig).name if stop_sig in signal.Signals else str(stop_sig)
+                logging.info("Process %d initially stopped by signal: %s (%d)", pid, sig_name, stop_sig)
+            elif os.WIFEXITED(initial_status):
+                logging.info("Process %d initially exited with status: %d", pid, os.WEXITSTATUS(initial_status))
+            elif os.WIFSIGNALED(initial_status):
+                # Attempt to get signal name, fall back to raw number if not in signal.Signals
+                term_sig = os.WTERMSIG(initial_status)
+                sig_name = signal.Signals(term_sig).name if term_sig in signal.Signals else str(term_sig)
+                logging.info("Process %d initially terminated by signal: %s (%d)", pid, sig_name, term_sig)
+            else:
+                logging.info("Process %d initial status unknown: %s", pid, hex(initial_status))
+        except ChildProcessError as e:
+            logging.error("Child process %d disappeared during initial blocking wait: %s", pid, e)
+        except OSError as e:
+            logging.error("OSError during initial blocking wait for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+        # The existing WNOHANG loop will now take over.
+
         regs = user_regs_struct()
         end_time = time.time() + timeout * 2
         while True:
