@@ -218,32 +218,45 @@ class CoverageCollector(ABC):
                 logging.error("PTRACE_DETACH also failed for pid %d (errno %d: %s)", pid, e_detach.errno, os.strerror(e_detach.errno))
             return coverage
 
+        # Define regs and end_time before the initial wait block and the main loop
+        regs = user_regs_struct()
+        end_time = time.time() + timeout * 2
+
         logging.debug("Attempting initial blocking wait for pid %d immediately after PTRACE_CONT", pid)
         try:
             initial_wpid, initial_status = os.waitpid(pid, 0)
             logging.info("Initial blocking wait for pid %d returned: wpid=%s, status=%s (raw int: %d)", pid, initial_wpid, hex(initial_status), initial_status)
             if os.WIFSTOPPED(initial_status):
-                # Attempt to get signal name, fall back to raw number if not in signal.Signals
                 stop_sig = os.WSTOPSIG(initial_status)
+                # Use initial_wpid for logging specific to the stopped process's state, as it's the actual wpid returned.
                 sig_name = signal.Signals(stop_sig).name if stop_sig in signal.Signals else str(stop_sig)
-                logging.info("Process %d initially stopped by signal: %s (%d)", pid, sig_name, stop_sig)
+                logging.info("Process %d initially stopped by signal: %s (%d)", initial_wpid, sig_name, stop_sig)
+                if stop_sig == signal.SIGSEGV:
+                    try:
+                        # 'regs' is now defined in the outer scope of collect_coverage
+                        _ptrace(PTRACE_GETREGS, initial_wpid, 0, ctypes.addressof(regs))
+                        pc = get_pc(regs)
+                        logging.error("Process %d initially stopped by SIGSEGV (signal %d) at PC: %#x", initial_wpid, stop_sig, pc)
+                    except OSError as e_getregs:
+                        logging.error("PTRACE_GETREGS failed for pid %d after SIGSEGV (errno %d: %s)", initial_wpid, e_getregs.errno, os.strerror(e_getregs.errno))
             elif os.WIFEXITED(initial_status):
-                logging.info("Process %d initially exited with status: %d", pid, os.WEXITSTATUS(initial_status))
+                # Use initial_wpid here as well, or pid if initial_wpid might be different and we still want to refer to the input pid.
+                # For WIFEXITED/SIGNALED, initial_wpid is the pid of the child that changed state.
+                logging.info("Process %d initially exited with status: %d", initial_wpid, os.WEXITSTATUS(initial_status))
             elif os.WIFSIGNALED(initial_status):
-                # Attempt to get signal name, fall back to raw number if not in signal.Signals
                 term_sig = os.WTERMSIG(initial_status)
                 sig_name = signal.Signals(term_sig).name if term_sig in signal.Signals else str(term_sig)
-                logging.info("Process %d initially terminated by signal: %s (%d)", pid, sig_name, term_sig)
+                logging.info("Process %d initially terminated by signal: %s (%d)", initial_wpid, sig_name, term_sig)
             else:
-                logging.info("Process %d initial status unknown: %s", pid, hex(initial_status))
+                logging.info("Process %d initial status unknown: %s", initial_wpid, hex(initial_status))
         except ChildProcessError as e:
-            logging.error("Child process %d disappeared during initial blocking wait: %s", pid, e)
+            logging.error("Child process %d disappeared during initial blocking wait: %s", pid, e) # pid is correct here
         except OSError as e:
-            logging.error("OSError during initial blocking wait for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+            logging.error("OSError during initial blocking wait for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno)) # pid is correct here
         # The existing WNOHANG loop will now take over.
 
-        regs = user_regs_struct()
-        end_time = time.time() + timeout * 2
+        # regs = user_regs_struct() # Moved up
+        # end_time = time.time() + timeout * 2 # Moved up
         while True:
             try:
                 wpid, status = os.waitpid(pid, os.WNOHANG)
