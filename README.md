@@ -1,23 +1,63 @@
 # Project: fz
 A lightweight, extensible, and reasonably performant fuzzer written in Python. This project aims for near feature-parity with modern open-source fuzzers while maintaining minimal dependencies.
 
-# Core Goals
-Minimal Dependencies: Keep the core fuzzer lean and easy to set up.
+## Quick Setup
 
-Performant (for Python): Strive for efficient execution, acknowledging Python's performance characteristics.
-
-Near Feature Parity: Implement the key capabilities found in state-of-the-art fuzzers.
-
-Proven Effectiveness: Prove the fuzzer's capability by using it to discover at least one verifiable bug in a target application.
-## Installation
-
-Install the project in editable mode so the `fz` command is available:
+Install the package in editable mode (Python 3.8+):
 
 ```bash
 pip install -e .
 ```
 
+This installs the `fz`, `fz-corpus-analyzer`, and `fz-cfg` commands.
 
+## Quick Usage
+
+Fuzz a binary:
+
+```bash
+fz --target /path/to/binary --iterations 100
+```
+
+Write input to a file:
+
+```bash
+fz --target /path/to/binary --file-input --iterations 100
+```
+
+Fuzz a network service:
+
+```bash
+fz --target /path/to/server --tcp 127.0.0.1 9999 --iterations 100
+```
+
+Use a YAML config:
+
+```bash
+fz --config config.yaml
+```
+
+Inspect saved samples:
+
+```bash
+fz-corpus-analyzer --corpus-dir ./corpus
+```
+
+Generate a control flow graph:
+
+```bash
+fz-cfg /usr/bin/file --svg file.svg
+```
+
+# Core Goals
+Minimal Dependencies: Keep the core fuzzer lean and easy to set up.
+
+Performant (for Python): Strive for efficient execution, acknowledging Python's
+performance characteristics.
+
+Near Feature Parity: Implement the key capabilities found in state-of-the-art fuzzers.
+
+Proven Effectiveness: Prove the fuzzer's capability by using it to discover at least one verifiable bug in a target application.
 # Architectural Overview & Roadmap
 The fuzzer is designed around three distinct phases: Setup, Test, and Evaluate. The setup phase is optimized to run only once, not on every fuzzing iteration, to maximize throughput.
 

@@ -17,6 +17,7 @@ from fz import coverage
 from fz.coverage import ControlFlowGraph, get_possible_edges
 from fz.corpus.corpus import Corpus
 from fz.harness.network import NetworkHarness
+from fz.harness import PreloadHarness
 from fz.runner.target import run_target
 
 libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
@@ -50,6 +51,7 @@ class Fuzzer:
                 qemu_user=qemu_user,
                 gdb_port=gdb_port,
                 arch=arch,
+                env=None,
             )
             logging.debug(
                 "Run returned %d coverage entries", len(coverage_set)
@@ -93,6 +95,9 @@ class Fuzzer:
 
         mode = "file" if args.file_input else "stdin"
         harness = None
+        if args.preload:
+            from fz.harness import PreloadHarness
+            harness = PreloadHarness(args.preload)
         if args.tcp:
             host, port = args.tcp
             harness = NetworkHarness(host, int(port), udp=False)
@@ -101,6 +106,8 @@ class Fuzzer:
             host, port = args.udp
             harness = NetworkHarness(host, int(port), udp=True)
             mode = "udp"
+        elif args.preload:
+            mode = "preload"
         logging.info("Running %s fuzzer", mode)
         logging.info("Target: %s", args.target)
         iter_desc = "infinite" if args.run_forever else str(args.iterations)
@@ -351,6 +358,11 @@ def parse_args():
         nargs=2,
         metavar=("HOST", "PORT"),
         help="Send input over UDP to HOST and PORT",
+    )
+    parser.add_argument(
+        "--preload",
+        metavar="LIB",
+        help="Path to LD_PRELOAD library for harnessing",
     )
     parser.add_argument(
         "--corpus-dir",
