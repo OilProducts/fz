@@ -354,7 +354,16 @@ class LinuxCollector(CoverageCollector):
                     addr_range, perms, offset, _dev, _inode, path = parts
                     if "x" not in perms:
                         continue
-                    if os.path.basename(path) == name or path.endswith(name):
+                    base = os.path.basename(path)
+                    real_base = os.path.basename(os.path.realpath(path))
+                    if (
+                        base == name
+                        or real_base == name
+                        or base.startswith(name + ".")
+                        or real_base.startswith(name + ".")
+                        or path.endswith(name)
+                        or os.path.realpath(path).endswith(name)
+                    ):
                         start = int(addr_range.split("-", 1)[0], 16)
                         off = int(offset, 16)
                         return os.path.realpath(path), start - off

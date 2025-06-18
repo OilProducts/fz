@@ -1,6 +1,8 @@
 import ctypes
 import os
 import signal
+import io
+import builtins
 import pytest
 
 from fz.coverage.collector import (
@@ -113,3 +115,22 @@ def test_collect_coverage_with_library(monkeypatch, tiny_binary):
     edges = collector.collect_coverage(1234, exe=exe, libs=["libmagic.so"], already_traced=True)
     assert called["name"] == "libmagic.so"
     assert edges == {((exe, blocks[0]), (exe, blocks[1]))}
+
+
+def test_find_library_symlink(monkeypatch):
+    maps = (
+        "7f12345000-7f12346000 r-xp 00000000 00:00 0 /usr/lib/libmagic.so.1.0.0\n"
+    )
+
+    def fake_open(path, mode="r", *args, **kwargs):
+        if path == "/proc/999/maps":
+            return io.StringIO(maps)
+        return open_orig(path, mode, *args, **kwargs)
+
+    open_orig = builtins.open
+    monkeypatch.setattr(builtins, "open", fake_open)
+
+    collector = LinuxCollector()
+    path, base = collector._find_library(999, "libmagic.so.1")
+    assert path.endswith("libmagic.so.1.0.0")
+    assert base == int("7f12345000", 16)
