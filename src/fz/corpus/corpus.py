@@ -71,6 +71,11 @@ class Corpus:
             self.coverage.update(coverage)
             self.coverage_hashes.add(cov_hash)
         else:
+            if not coverage - self.coverage:
+                logging.debug("Input did not yield new coverage")
+                self.coverage.update(coverage)
+                return False, None
+            self.coverage.update(coverage)
             filename = f"{category}-{int(time.time() * 1000)}.json"
             path = os.path.join(self.directory, filename)
 
