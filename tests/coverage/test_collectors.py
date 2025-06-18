@@ -10,16 +10,16 @@ from fz.coverage.collector import (
     PTRACE_SETREGS,
 )
 from fz.coverage import collector as collector_module
-from fz.coverage.utils import get_basic_blocks
+from fz.coverage.utils import get_basic_blocks, get_text_base
 from fz.arch import x86 as arch
 
 
-def _mock_environment(monkeypatch, blocks):
+def _mock_environment(monkeypatch, blocks, text_base=0):
     state = {"i": 0}
 
     def fake_ptrace(request, pid, addr=0, data=0):
         if request == PTRACE_GETREGS:
-            ctypes.cast(data, ctypes.POINTER(arch.user_regs_struct)).contents.rip = blocks[state["i"]] + 1
+            ctypes.cast(data, ctypes.POINTER(arch.user_regs_struct)).contents.rip = text_base + blocks[state["i"]] + 1
         elif request == PTRACE_SETREGS:
             state["i"] += 1
         return 0
@@ -54,11 +54,13 @@ def test_linux_collector(monkeypatch, tiny_binary):
         (1234, 0),
     ])
 
-    _mock_environment(monkeypatch, blocks)
+    text_base = get_text_base(exe)
+    _mock_environment(monkeypatch, blocks, text_base)
     monkeypatch.setattr(LinuxCollector, "_get_image_base", lambda self, pid, exe: 0)
 
     edges = collector.collect_coverage(1234, exe=exe, already_traced=True)
-    assert edges == {((exe, blocks[0]), (exe, blocks[1]))}
+    expected = {((exe, text_base + blocks[0]), (exe, text_base + blocks[1]))}
+    assert edges == expected
 
 
 def test_macos_collector(monkeypatch, tiny_binary):
@@ -75,11 +77,13 @@ def test_macos_collector(monkeypatch, tiny_binary):
         (1234, 0),
     ])
 
-    _mock_environment(monkeypatch, blocks)
+    text_base = get_text_base(exe)
+    _mock_environment(monkeypatch, blocks, text_base)
     monkeypatch.setattr(MacOSCollector, "_get_image_base", lambda self, pid, exe: 0)
 
     edges = collector.collect_coverage(1234, exe=exe, already_traced=True)
-    assert edges == {((exe, blocks[0]), (exe, blocks[1]))}
+    expected = {((exe, text_base + blocks[0]), (exe, text_base + blocks[1]))}
+    assert edges == expected
 
     with pytest.raises(RuntimeError):
         collector.collect_coverage(1234, exe=None, already_traced=True)
@@ -99,7 +103,8 @@ def test_collect_coverage_with_library(monkeypatch, tiny_binary):
         (1234, 0),
     ])
 
-    _mock_environment(monkeypatch, blocks)
+    text_base = get_text_base(exe)
+    _mock_environment(monkeypatch, blocks, text_base)
     monkeypatch.setattr(LinuxCollector, "_get_image_base", lambda self, pid, exe: 0)
 
     called = {}
@@ -112,4 +117,5 @@ def test_collect_coverage_with_library(monkeypatch, tiny_binary):
 
     edges = collector.collect_coverage(1234, exe=exe, libs=["libmagic.so"], already_traced=True)
     assert called["name"] == "libmagic.so"
-    assert edges == {((exe, blocks[0]), (exe, blocks[1]))}
+    expected = {((exe, text_base + blocks[0]), (exe, text_base + blocks[1]))}
+    assert edges == expected

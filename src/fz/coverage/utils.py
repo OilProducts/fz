@@ -9,6 +9,7 @@ from elftools.elf.elffile import ELFFile
 
 _block_cache = {}
 _edge_cache = {}
+_text_base_cache = {}
 
 
 def _load_text(exe: str) -> tuple[bytes, int]:
@@ -42,6 +43,20 @@ def _get_disassembler():
         md = Cs(CS_ARCH_X86, CS_MODE_64)
     md.detail = True
     return md
+
+
+def get_text_base(exe: str) -> int:
+    """Return the virtual address of the ``.text`` section."""
+    exe = os.path.realpath(exe)
+    if exe in _text_base_cache:
+        return _text_base_cache[exe]
+    try:
+        _data, base = _load_text(exe)
+    except Exception as e:
+        logging.debug("Failed to read .text from %s: %s", exe, e)
+        base = 0
+    _text_base_cache[exe] = base
+    return base
 
 
 def get_basic_blocks(exe: str) -> List[int]:

@@ -4,7 +4,7 @@ import time
 from typing import Optional, Set
 
 from .collector import CoverageCollector
-from .utils import get_basic_blocks
+from .utils import get_basic_blocks, get_text_base
 from ..arch import arm64 as arm64_arch
 from ..arch import x86 as x86_arch
 
@@ -126,11 +126,12 @@ class QemuGdbCollector(CoverageCollector):
             raise RuntimeError("Executable path required")
         gdb = GDBRemote(self.host, self.port)
         blocks = get_basic_blocks(exe)
+        text_base = get_text_base(exe)
         base = 0
         breakpoints = {}
         bp_size = 4 if self.arch.startswith("aarch64") or self.arch == "arm64" else 1
         for off in blocks:
-            addr = base + off
+            addr = base + text_base + off
             try:
                 orig = gdb.read_memory(addr, bp_size)
                 gdb.write_memory(addr, self.BREAKPOINT.to_bytes(bp_size, "little"))
