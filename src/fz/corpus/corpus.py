@@ -19,6 +19,29 @@ class Corpus:
         self.coverage = set()
         self.coverage_hashes = set()
         self.output_bytes = output_bytes
+        self._load_existing()
+
+    def _coverage_hash(self, coverage) -> str:
+        """Return a stable hash for *coverage*."""
+        hash_input = ",".join(str(c) for c in sorted(coverage)).encode()
+        return hashlib.sha1(hash_input).hexdigest()
+
+    def _load_existing(self) -> None:
+        """Populate coverage sets from the existing corpus."""
+        if not os.path.isdir(self.directory):
+            return
+        for name in os.listdir(self.directory):
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(self.directory, name)
+            try:
+                with open(path) as f:
+                    record = json.load(f)
+                edges = {tuple(e) for e in record.get("coverage", []) if len(e) == 4}
+            except Exception:
+                continue
+            self.coverage.update(edges)
+            self.coverage_hashes.add(self._coverage_hash(edges))
 
     def save_input(
         self,
