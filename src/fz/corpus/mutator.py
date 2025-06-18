@@ -4,6 +4,8 @@ import os
 import random
 from typing import List, Set, Iterable
 
+from fz.coverage.cfg import Edge
+
 from fz.coverage import ControlFlowGraph
 
 
@@ -122,7 +124,7 @@ class Mutator:
         seed = self._choose_seed()
         return self.mutate(seed)
 
-    def record_result(self, data: bytes, coverage: Set[tuple[tuple[str, int], tuple[str, int]]], interesting: bool) -> None:
+    def record_result(self, data: bytes, coverage: Set[Edge], interesting: bool) -> None:
         """Update seed pool based on the result of a fuzz iteration."""
         if interesting:
             self.seeds.append(data)

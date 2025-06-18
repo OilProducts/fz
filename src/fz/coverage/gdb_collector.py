@@ -3,6 +3,8 @@ import socket
 import time
 from typing import Optional, Set
 
+from .cfg import Edge
+
 from .collector import CoverageCollector
 from .utils import get_basic_blocks
 from .common import BREAKPOINT
@@ -114,7 +116,7 @@ class QemuGdbCollector(CoverageCollector):
         exe: Optional[str] = None,
         already_traced: bool = False,
         libs: Optional[list[str]] = None,
-    ) -> Set[tuple[tuple[str, int], tuple[str, int]]]:
+    ) -> Set[Edge]:
         if exe is None:
             raise RuntimeError("Executable path required")
         gdb = GDBRemote(self.host, self.port)
@@ -132,7 +134,7 @@ class QemuGdbCollector(CoverageCollector):
                 logging.debug("Failed to set breakpoint at %#x: %s", addr, e)
         gdb.continue_()
         end_time = time.time() + timeout * 2
-        coverage: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
+        coverage: Set[Edge] = set()
         prev = None
         while time.time() < end_time:
             reason = gdb._recv_packet()
