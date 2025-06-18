@@ -12,25 +12,23 @@ from abc import ABC, abstractmethod
 from typing import Optional, Set
 
 from .utils import get_basic_blocks
-from .common import _ptrace, _ptrace_peek, _ptrace_poke
+from .common import (
+    _ptrace,
+    _ptrace_peek,
+    _ptrace_poke,
+    PTRACE_ATTACH,
+    PTRACE_DETACH,
+    PTRACE_CONT,
+    PTRACE_SINGLESTEP,
+    PTRACE_GETREGS,
+    PTRACE_SETREGS,
+    BREAKPOINT,
+    user_regs_struct,
+    get_pc,
+    set_pc,
+)
 
 ARCH = platform.machine().lower()
-if ARCH in ("aarch64", "arm64"):
-    from ..arch import arm64 as arch
-else:
-    from ..arch import x86 as arch
-
-PTRACE_ATTACH = 16
-PTRACE_DETACH = 17
-PTRACE_CONT = 7
-PTRACE_SINGLESTEP = 9
-PTRACE_GETREGS = 12
-PTRACE_SETREGS = 13
-
-BREAKPOINT = arch.BREAKPOINT
-user_regs_struct = arch.user_regs_struct
-get_pc = arch.get_pc
-set_pc = arch.set_pc
 
 
 class CoverageCollector(ABC):
