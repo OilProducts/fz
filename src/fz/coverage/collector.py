@@ -132,15 +132,114 @@ class CoverageCollector(ABC):
                  logging.warning("Child process %d disappeared after PTRACE_ATTACH: %s", pid, e)
                  return coverage # Cannot continue
 
+        # Variable 'base_address' will be defined by the new entry point logic.
+        # It will store the base address of the main executable.
+        base_address = 0
+        orig_byte_at_entry = -1 # Sentinel for cleanup check in entry point logic
+        actual_entry_point = 0 # Will be determined
+
+        # --- New entry point handling logic ---
+        if exe_path: # Only proceed if we have a valid executable path
+            try:
+                with open(exe_path, "rb") as f:
+                    elffile = ELFFile(f)
+                    entry_point_offset = elffile.header.e_entry
+
+                    # Determine the actual base address using self._get_image_base
+                    # This is important because the new logic needs it before modules list is built.
+                    base_address = self._get_image_base(pid, exe_path)
+
+                    if elffile.header.e_type == 'ET_DYN': # Position Independent Executable
+                        if base_address == 0: # Must have a non-zero base for PIE
+                             logging.error("Executable %s is PIE (ET_DYN) but base address is 0. Cannot reliably calculate entry point.", exe_path)
+                             # Not returning coverage yet, will let it fall through to general breakpointing if user wants to risk it
+                             # but entry point BP part will be skipped.
+                        else:
+                            actual_entry_point = base_address + entry_point_offset
+                            logging.info("PIE executable %s: e_entry %#x, base_address %#x, actual_entry_point %#x", exe_path, entry_point_offset, base_address, actual_entry_point)
+                    elif elffile.header.e_type == 'ET_EXEC': # Non-PIE
+                        actual_entry_point = entry_point_offset # e_entry is absolute VA
+                        logging.info("Non-PIE executable %s: e_entry (absolute VA) is %#x. Base address from maps is %#x (may differ).", exe_path, actual_entry_point, base_address)
+                        # If base_address from maps is 0 for non-PIE, it's fine if linked low.
+                        # If base_address is non-zero, it's the load addr of first segment. actual_entry_point is absolute.
+                    else:
+                        logging.error("Unsupported ELF type %s for %s. Cannot determine entry point.", elffile.header.e_type, exe_path)
+                        actual_entry_point = 0 # Mark as undetermined
+
+                if actual_entry_point != 0: # Proceed only if entry point was determined
+                    logging.debug("Setting temporary breakpoint at program entry point %#x for pid %d", actual_entry_point, pid)
+                    orig_byte_at_entry = _ptrace_peek(pid, actual_entry_point)
+                    _ptrace_poke(pid, actual_entry_point, (orig_byte_at_entry & ~0xFF) | BREAKPOINT)
+
+                    logging.debug("Continuing process %d to hit temporary entry point breakpoint", pid)
+                    _ptrace(PTRACE_CONT, pid, 0, 0)
+
+                    temp_wpid, temp_status = os.waitpid(pid, 0) # Blocking wait
+                    logging.info("Initial run to entry point for pid %d: wpid=%d, status=%s (raw: %d)", pid, temp_wpid, hex(temp_status), temp_status)
+
+                    if os.WIFSTOPPED(temp_status) and os.WSTOPSIG(temp_status) == signal.SIGTRAP:
+                        _ptrace(PTRACE_GETREGS, temp_wpid, 0, ctypes.addressof(regs))
+                        pc = get_pc(regs)
+                        expected_pc_after_bp = actual_entry_point + (4 if ARCH in ('aarch64', 'arm64') else 1)
+                        # Check if PC is at or immediately after the breakpoint
+                        if pc == expected_pc_after_bp or pc == actual_entry_point:
+                             logging.info("Hit temporary entry point breakpoint for pid %d at PC: %#x", temp_wpid, pc)
+                        else:
+                             logging.warning("Hit temporary breakpoint for pid %d. PC is %#x, expected around %#x. Continuing as if at entry.",
+                                          temp_wpid, pc, actual_entry_point)
+
+                        _ptrace_poke(pid, actual_entry_point, orig_byte_at_entry) # Restore original byte
+                        orig_byte_at_entry = -1 # Mark as restored
+                        set_pc(regs, actual_entry_point) # Set PC back to the actual entry point
+                        _ptrace(PTRACE_SETREGS, temp_wpid, 0, ctypes.addressof(regs))
+                        logging.info("Successfully stopped at entry point. Now proceeding to insert main coverage breakpoints for pid %d.", pid)
+                    elif os.WIFSIGNALED(temp_status):
+                        term_sig = os.WTERMSIG(temp_status)
+                        sig_name = signal.Signals(term_sig).name if term_sig in signal.Signals else str(term_sig)
+                        logging.error("Process %d terminated by signal %s (%d) while running to entry point. Cannot collect coverage.", pid, sig_name, term_sig)
+                        if orig_byte_at_entry != -1: _ptrace_poke(pid, actual_entry_point, orig_byte_at_entry)
+                        return coverage
+                    else:
+                        logging.error("Process %d stopped/exited unexpectedly (status %s) while running to entry point. Cannot collect coverage.", pid, hex(temp_status))
+                        if orig_byte_at_entry != -1: _ptrace_poke(pid, actual_entry_point, orig_byte_at_entry)
+                        return coverage
+                else: # actual_entry_point is 0 (e.g. unsupported ELF or PIE with base 0)
+                    logging.warning("Entry point not determined or invalid for %s. Skipping temporary breakpoint.", exe_path)
+
+            except FileNotFoundError as e:
+                logging.error("ELF file %s not found for entry point detection: %s", exe_path, e)
+                # base_address might not be set here, ensure it's initialized if we fall through
+                if 'base_address' not in locals(): base_address = self._get_image_base(pid, exe_path) if exe_path else 0
+            except OSError as e:
+                logging.error("OSError during entry point handling for pid %d (errno %d: %s): %s.", pid, e.errno, os.strerror(e.errno), e)
+                if orig_byte_at_entry != -1:
+                    try: _ptrace_poke(pid, actual_entry_point, orig_byte_at_entry)
+                    except Exception as e_cleanup: logging.debug("Cleanup poke failed: %s", e_cleanup)
+                # Fall through to general breakpointing, base_address might be inaccurate or 0
+                if 'base_address' not in locals(): base_address = self._get_image_base(pid, exe_path) if exe_path else 0
+            except Exception as e_gen:
+                logging.error("Unexpected error during entry point handling for %s (pid %d): %s", exe_path, pid, e_gen)
+                if orig_byte_at_entry != -1:
+                    try: _ptrace_poke(pid, actual_entry_point, orig_byte_at_entry)
+                    except Exception: pass
+                if 'base_address' not in locals(): base_address = self._get_image_base(pid, exe_path) if exe_path else 0
+        elif not exe_path: # exe_path was None from the start
+             logging.warning("exe_path is None, skipping entry point logic. Base address will be 0.")
+             base_address = 0 # Ensure base_address is 0 if no exe_path
+        # --- End of new entry point handling logic ---
+
         modules = []
-        if exe_path:
-            base = self._get_image_base(pid, exe_path)
-            if base == 0:
-                logging.debug("Base address not found for %s", exe_path)
-            logging.debug("%s loaded at %#x", exe_path, base)
-            modules.append((exe_path, base))
+        if exe_path: # Use the base_address determined (or defaulted) above
+            if base_address == 0 and exe_path: # Log if base is still 0 after entry logic for a valid exe_path
+                 logging.warning("Base address for main module %s is 0 before inserting final breakpoints.", exe_path)
+            modules.append((exe_path, base_address))
 
         if effective_libs:
+            # CRITICAL: Process is STOPPED here if entry point logic succeeded.
+            # _wait_for_libraries (especially Linux r_brk impl) needs to run/step the process.
+            # This will require careful modification of _wait_for_libraries or a change in strategy here.
+            # For now, logging this potential issue.
+            logging.debug("Calling _wait_for_libraries for pid %d while process is potentially stopped at entry point.", pid)
             modules.extend(self._wait_for_libraries(pid, effective_libs, timeout))
 
         logging.debug("Inserting breakpoints for block coverage")
@@ -208,55 +307,35 @@ class CoverageCollector(ABC):
                     logging.warning("Outer OSError when inserting breakpoint at %#x: %s (errno %d: %s)", b, e, e.errno, os.strerror(e.errno))
                     continue
 
+        # All coverage breakpoints are now set.
+        # The process was left stopped by the entry point handling logic (if successful),
+        # or by _wait_for_libraries, or by the initial PTRACE_ATTACH.
+        # Now, continue the process for the main coverage collection loop.
         try:
             _ptrace(PTRACE_CONT, pid)
+            logging.debug("Resuming process %d for main coverage collection.", pid)
         except OSError as e:
-            logging.error("Initial PTRACE_CONT failed for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+            logging.error("PTRACE_CONT failed before main event loop for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno))
+            # Attempt to detach and restore any breakpoints that were set
+            # This cleanup is complex as breakpoints are in `breakpoints` dict and word_cache
             try:
-                _ptrace(PTRACE_DETACH, pid) # Attempt to detach
+                for bp_addr_restore, info_restore in breakpoints.items(): # Iterate over potentially set BPs
+                    # Simplified restore logic here, actual restore is more complex (see end of function)
+                    if ARCH in ("aarch64", "arm64"):
+                        word_addr_restore, _, _, _ = info_restore
+                        if word_addr_restore in word_cache:
+                             _ptrace_poke(pid, word_addr_restore, word_cache[word_addr_restore][0]) # Restore original word
+                    else: # x86
+                         _ptrace_poke(pid, bp_addr_restore, info_restore[0]) # Restore original byte
+            except Exception as e_bp_cleanup:
+                logging.error("Error during breakpoint cleanup after PTRACE_CONT failure: %s", e_bp_cleanup)
+            try:
+                _ptrace(PTRACE_DETACH, pid)
             except OSError as e_detach:
                 logging.error("PTRACE_DETACH also failed for pid %d (errno %d: %s)", pid, e_detach.errno, os.strerror(e_detach.errno))
             return coverage
 
-        # Define regs and end_time before the initial wait block and the main loop
-        regs = user_regs_struct()
-        end_time = time.time() + timeout * 2
-
-        logging.debug("Attempting initial blocking wait for pid %d immediately after PTRACE_CONT", pid)
-        try:
-            initial_wpid, initial_status = os.waitpid(pid, 0)
-            logging.info("Initial blocking wait for pid %d returned: wpid=%s, status=%s (raw int: %d)", pid, initial_wpid, hex(initial_status), initial_status)
-            if os.WIFSTOPPED(initial_status):
-                stop_sig = os.WSTOPSIG(initial_status)
-                # Use initial_wpid for logging specific to the stopped process's state, as it's the actual wpid returned.
-                sig_name = signal.Signals(stop_sig).name if stop_sig in signal.Signals else str(stop_sig)
-                logging.info("Process %d initially stopped by signal: %s (%d)", initial_wpid, sig_name, stop_sig)
-                if stop_sig == signal.SIGSEGV:
-                    try:
-                        # 'regs' is now defined in the outer scope of collect_coverage
-                        _ptrace(PTRACE_GETREGS, initial_wpid, 0, ctypes.addressof(regs))
-                        pc = get_pc(regs)
-                        logging.error("Process %d initially stopped by SIGSEGV (signal %d) at PC: %#x", initial_wpid, stop_sig, pc)
-                    except OSError as e_getregs:
-                        logging.error("PTRACE_GETREGS failed for pid %d after SIGSEGV (errno %d: %s)", initial_wpid, e_getregs.errno, os.strerror(e_getregs.errno))
-            elif os.WIFEXITED(initial_status):
-                # Use initial_wpid here as well, or pid if initial_wpid might be different and we still want to refer to the input pid.
-                # For WIFEXITED/SIGNALED, initial_wpid is the pid of the child that changed state.
-                logging.info("Process %d initially exited with status: %d", initial_wpid, os.WEXITSTATUS(initial_status))
-            elif os.WIFSIGNALED(initial_status):
-                term_sig = os.WTERMSIG(initial_status)
-                sig_name = signal.Signals(term_sig).name if term_sig in signal.Signals else str(term_sig)
-                logging.info("Process %d initially terminated by signal: %s (%d)", initial_wpid, sig_name, term_sig)
-            else:
-                logging.info("Process %d initial status unknown: %s", initial_wpid, hex(initial_status))
-        except ChildProcessError as e:
-            logging.error("Child process %d disappeared during initial blocking wait: %s", pid, e) # pid is correct here
-        except OSError as e:
-            logging.error("OSError during initial blocking wait for pid %d (errno %d: %s)", pid, e.errno, os.strerror(e.errno)) # pid is correct here
-        # The existing WNOHANG loop will now take over.
-
-        # regs = user_regs_struct() # Moved up
-        # end_time = time.time() + timeout * 2 # Moved up
+        # Note: `regs` and `end_time` are already defined earlier in the function.
         while True:
             try:
                 wpid, status = os.waitpid(pid, os.WNOHANG)

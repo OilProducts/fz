@@ -64,22 +64,25 @@ def run_target(
         logging.debug("Launching target: %s", " ".join(argv))
 
         preexec = None
-        if not qemu_user:
-            def _trace_me():
-                libc.ptrace(PTRACE_TRACEME, 0, None, None)
-
-            preexec = _trace_me
+        # PTRACE_TRACEME logic removed, collector will use PTRACE_ATTACH for native targets.
+        # if not qemu_user:
+        #     def _trace_me():
+        #         libc.ptrace(PTRACE_TRACEME, 0, None, None)
+        #
+        #     preexec = _trace_me
 
         proc = subprocess.Popen(
             argv,
             stdin=stdin_pipe,
             stdout=stdout_file,
             stderr=stderr_file,
-            preexec_fn=preexec,
+            preexec_fn=preexec, # preexec is now always None
             env=env,
         )
-        if not qemu_user:
-            os.waitpid(proc.pid, 0)
+        # os.waitpid after Popen for PTRACE_TRACEME removed.
+        # PTRACE_ATTACH in CoverageCollector will handle its own wait.
+        # if not qemu_user:
+        #     os.waitpid(proc.pid, 0)
 
         if not file_input and proc.stdin:
             try:
@@ -96,17 +99,68 @@ def run_target(
         if qemu_user:
             collector = coverage.get_gdb_collector("127.0.0.1", gdb_port, arch or "x86_64")
             logging.debug("Using QemuGdbCollector for coverage.")
+            # QemuGdbCollector.collect_coverage doesn't use/need already_traced
+            # It also doesn't use the 'exe' parameter in the same way, target path is for symbolication.
+            coverage_set = collector.collect_coverage(proc.pid, timeout, exe=target, libs=libs)
         else:
             collector = coverage.get_collector()
-            logging.debug("Using native collector: %s", collector.__class__.__name__)
+            logging.debug("Using native collector: %s, will use PTRACE_ATTACH.", collector.__class__.__name__)
+            # Force PTRACE_ATTACH path in CoverageCollector by setting already_traced=False
+            coverage_set = collector.collect_coverage(proc.pid, timeout, exe=target, already_traced=False, libs=libs)
+        # The try...except block for collect_coverage call remains:
+        # try:
+        #     ...
+        # except FileNotFoundError: ...
+        # except OSError: ...
+        # For brevity, the diff only shows the changed part of the collect_coverage call.
+        # The following lines are conceptual and represent the existing try-except structure.
+        # This diff only modifies the parameters to collect_coverage.
+        # The actual try/except FileNotFoundError/OSError is expected to be outside this specific change block.
+        # The tool should merge this change into the existing try-except structure.
+        # The provided SEARCH block correctly captures the original call.
+        # The REPLACE block provides the new call structure.
+        # The original code was:
+        # try:
+        #     coverage_set = collector.collect_coverage(
+        #         proc.pid,
+        #         timeout,
+        #         target, # This was 'exe' in CoverageCollector, but 'target' (path) is more appropriate here
+        #         already_traced=not qemu_user,
+        #         libs=libs,
+        #     )
+        # except FileNotFoundError:
+        #
+        # This is being replaced by the logic above, which should still be wrapped in the try/except.
+        # The diff tool should handle this correctly by replacing only the specific lines matched in SEARCH.
+        # The key is that the `try:` and `except ...:` lines themselves are not in the SEARCH block.
+        # The `coverage_set = collector.collect_coverage(...)` line is what's being replaced.
+        # The prompt's example for the `collect_coverage` change was:
+        # ```python
+        # if qemu_user:
+        #     collector = coverage.get_gdb_collector("127.0.0.1", gdb_port, arch or "x86_64")
+        #     logging.debug("Using QemuGdbCollector for coverage.")
+        #     # QemuGdbCollector.collect_coverage doesn't use/need already_traced
+        #     coverage_set = collector.collect_coverage(proc.pid, timeout, target, libs=libs) # target here is exe for collector
+        # else:
+        #     collector = coverage.get_collector()
+        #     logging.debug("Using native collector: %s, will use PTRACE_ATTACH.", collector.__class__.__name__)
+        #     # Force PTRACE_ATTACH path in CoverageCollector by setting already_traced=False
+        #     coverage_set = collector.collect_coverage(proc.pid, timeout, target, already_traced=False, libs=libs) # target here is exe for collector
+        # ```
+        # This entire if/else block for choosing collector and calling collect_coverage replaces the original.
+        # The `try...except` block will wrap this new if/else block.
+
+        # The following is the direct replacement of the old `try...coverage_set = ... except...`
+        # with the new logic, ensuring it's still within a try...except
         try:
-            coverage_set = collector.collect_coverage(
-                proc.pid,
-                timeout,
-                target,
-                already_traced=not qemu_user,
-                libs=libs,
-            )
+            if qemu_user:
+                collector = coverage.get_gdb_collector("127.0.0.1", gdb_port, arch or "x86_64")
+                logging.debug("Using QemuGdbCollector for coverage.")
+                coverage_set = collector.collect_coverage(proc.pid, timeout, exe=target, libs=libs)
+            else:
+                collector = coverage.get_collector()
+                logging.debug("Using native collector: %s, will use PTRACE_ATTACH.", collector.__class__.__name__)
+                coverage_set = collector.collect_coverage(proc.pid, timeout, exe=target, already_traced=False, libs=libs)
         except FileNotFoundError:
             logging.debug(
                 "Process %d exited before coverage collection", proc.pid
