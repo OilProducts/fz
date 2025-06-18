@@ -76,7 +76,7 @@ def get_basic_blocks(exe: str) -> List[int]:
     prev_branch = True
     for insn in md.disasm(text, base):
         if prev_branch:
-            blocks.add(insn.address - base)
+            blocks.add(insn.address)
         is_branch = (
             CS_GRP_JUMP in insn.groups
             or CS_GRP_RET in insn.groups
