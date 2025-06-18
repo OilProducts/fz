@@ -123,45 +123,53 @@ class Corpus:
             logging.debug("Failed to read %s for minimization: %s", path, e)
             return path
 
-        def reproduces_crash(inp: bytes) -> bool:
+        def test_input(inp: bytes) -> bool:
+            """Run *inp* and store any new coverage.
+
+            Returns ``True`` if the candidate still crashes or times out.
+            """
             if network:
-                _cov, crashed, timed_out, _exit, _stdout, _stderr = network.run(
+                cov, crashed, timed_out, exit_code, stdout, stderr = network.run(
                     target, inp, timeout, libs=libs
                 )
-                return crashed or timed_out
+            else:
+                cov, crashed, timed_out, exit_code, stdout, stderr = run_target(
+                    target,
+                    inp,
+                    timeout,
+                    file_input=file_input,
+                    output_bytes=0,
+                    libs=libs,
+                    env=None,
+                )
 
-            cov, crashed, timed_out, _exit, _stdout, _stderr = run_target(
-                target,
-                inp,
-                timeout,
-                file_input=file_input,
-                output_bytes=0,
-                libs=libs,
-                env=None,
-            )
+            # Save any coverage discovered while minimizing
+            self.save_input(inp, cov, "interesting", stdout, stderr, exit_code)
             return crashed or timed_out
 
         minimal = data
-        step = max(1, len(minimal) // 2)
         iterations = 0
+        n = 2
 
-        while step > 0 and len(minimal) > 1:
-            iterations += 1
-            i = 0
-            changed = False
-
-            while i + step <= len(minimal) and len(minimal) > 1:
-                candidate = minimal[:i] + minimal[i + step :]
-                if len(candidate) == 0:
-                    break
-                if reproduces_crash(candidate):
+        while len(minimal) >= 2:
+            chunk = len(minimal) // n
+            if chunk == 0:
+                break
+            found = False
+            for i in range(0, len(minimal), chunk):
+                candidate = minimal[:i] + minimal[i + chunk :]
+                if not candidate:
+                    continue
+                iterations += 1
+                if test_input(candidate):
                     minimal = candidate
-                    changed = True
-                else:
-                    i += step
-
-            if not changed:
-                step //= 2
+                    n = max(n - 1, 2)
+                    found = True
+                    break
+            if not found:
+                if n == len(minimal):
+                    break
+                n = min(n * 2, len(minimal))
 
         logging.info("Minimization loop executed %d iterations", iterations)
 
