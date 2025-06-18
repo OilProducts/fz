@@ -362,66 +362,92 @@ class LinuxCollector(CoverageCollector):
             logging.debug("/proc/%d/maps not found", pid)
         return None, 0
 
+    def _get_entry_offset(self, exe: str) -> int:
+        """Return the entry point offset for ``exe``."""
+        try:
+            with open(exe, "rb") as f:
+                elf = ELFFile(f)
+                return elf.header["e_entry"]
+        except Exception as e:
+            logging.debug("Failed to read entry point from %s: %s", exe, e)
+        return 0
+
     def _wait_for_libraries(
         self, pid: int, libs: list[str], timeout: float
     ) -> list[tuple[str, int]]:
         modules: list[tuple[str, int]] = []
         remaining = set(libs)
+
+        # Resolve the main executable and its entry point
+        exe = self._resolve_exe(pid, None)
+        base = self._get_image_base(pid, exe) if exe else 0
+        entry_off = self._get_entry_offset(exe) if exe else 0
+
+        if entry_off and base:
+            entry_addr = base + entry_off
+            try:
+                if ARCH in ("aarch64", "arm64"):
+                    word_addr = entry_addr & ~7
+                    offset = entry_addr & 7
+                    orig_word = _ptrace_peek(pid, word_addr)
+                    patched_word = orig_word
+                    if offset == 0:
+                        patched_word = (patched_word & ~0xFFFFFFFF) | BREAKPOINT
+                    else:
+                        patched_word = (patched_word & 0xFFFFFFFF) | (BREAKPOINT << 32)
+                    _ptrace_poke(pid, word_addr, patched_word)
+                else:
+                    orig_word = _ptrace_peek(pid, entry_addr)
+                    _ptrace_poke(pid, entry_addr, (orig_word & ~0xFF) | BREAKPOINT)
+            except OSError as e:
+                logging.debug("Failed to set entry breakpoint: %s", e)
+                return modules
+
+            regs = user_regs_struct()
+            end_time = time.time() + timeout
+            hit = False
+            while time.time() < end_time:
+                _ptrace(PTRACE_CONT, pid)
+                try:
+                    wpid, status = os.waitpid(pid, 0)
+                except ChildProcessError:
+                    break
+                if wpid != pid:
+                    break
+                if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:
+                    _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
+                    pc = get_pc(regs)
+                    addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
+                    if addr == entry_addr:
+                        hit = True
+                        break
+            # Restore original instruction and state
+            try:
+                if ARCH in ("aarch64", "arm64"):
+                    if offset == 0:
+                        patched_word = (patched_word & ~0xFFFFFFFF) | (orig_word & 0xFFFFFFFF)
+                    else:
+                        patched_word = (patched_word & 0xFFFFFFFF) | (orig_word & 0xFFFFFFFF00000000)
+                    _ptrace_poke(pid, word_addr, patched_word)
+                else:
+                    _ptrace_poke(pid, entry_addr, orig_word)
+                if hit:
+                    set_pc(regs, entry_addr)
+                    _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
+                    _ptrace(PTRACE_SINGLESTEP, pid)
+                    os.waitpid(pid, 0)
+            except OSError as e:
+                logging.debug("Failed restoring entry breakpoint: %s", e)
+
+        # With all libraries loaded, resolve their paths and bases
         for lib in list(remaining):
             path, base = self._find_library(pid, lib)
             if path:
                 modules.append((path, base))
                 remaining.remove(lib)
-        if not remaining:
-            return modules
-
-        r_brk = self._get_r_brk(pid)
-        if r_brk == 0:
-            raise RuntimeError("unable to resolve r_brk for library instrumentation")
-
-        try:
-            orig = _ptrace_peek(pid, r_brk)
-            _ptrace_poke(pid, r_brk, (orig & ~0xFF) | BREAKPOINT)
-        except OSError as e:
-            logging.debug("Failed to set r_brk breakpoint: %s", e)
-            raise RuntimeError("failed to set r_brk breakpoint") from e
-
-        regs = user_regs_struct()
-        end_time = time.time() + timeout
-        while remaining and time.time() < end_time:
-            _ptrace(PTRACE_CONT, pid)
-            try:
-                wpid, status = os.waitpid(pid, 0)
-            except ChildProcessError:
-                break
-            if wpid != pid:
-                break
-            if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:
-                _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
-                pc = get_pc(regs)
-                addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
-                if addr == r_brk:
-                    for lib in list(remaining):
-                        path, base = self._find_library(pid, lib)
-                        if path:
-                            modules.append((path, base))
-                            remaining.remove(lib)
-                    set_pc(regs, addr)
-                    _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
-                    _ptrace_poke(pid, r_brk, orig)
-                    _ptrace(PTRACE_SINGLESTEP, pid)
-                    os.waitpid(pid, 0)
-                    _ptrace_poke(pid, r_brk, (orig & ~0xFF) | BREAKPOINT)
-            else:
-                break
-
-        try:
-            _ptrace_poke(pid, r_brk, orig)
-        except OSError:
-            pass
 
         if remaining:
-            logging.debug("Libraries not loaded before timeout: %s", ", ".join(remaining))
+            logging.debug("Libraries not found: %s", ", ".join(remaining))
 
         return modules
 
