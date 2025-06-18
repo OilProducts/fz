@@ -64,25 +64,21 @@ def run_target(
         logging.debug("Launching target: %s", " ".join(argv))
 
         preexec = None
-        # PTRACE_TRACEME logic removed, collector will use PTRACE_ATTACH for native targets.
-        # if not qemu_user:
-        #     def _trace_me():
-        #         libc.ptrace(PTRACE_TRACEME, 0, None, None)
-        #
-        #     preexec = _trace_me
+        if not qemu_user:
+            def _trace_me():
+                libc.ptrace(PTRACE_TRACEME, 0, None, None)
+            preexec = _trace_me
 
         proc = subprocess.Popen(
             argv,
             stdin=stdin_pipe,
             stdout=stdout_file,
             stderr=stderr_file,
-            preexec_fn=preexec, # preexec is now always None
+            preexec_fn=preexec, # preexec is now restored for non-qemu
             env=env,
         )
-        # os.waitpid after Popen for PTRACE_TRACEME removed.
-        # PTRACE_ATTACH in CoverageCollector will handle its own wait.
-        # if not qemu_user:
-        #     os.waitpid(proc.pid, 0)
+        if not qemu_user:
+            os.waitpid(proc.pid, 0)
 
         if not file_input and proc.stdin:
             try:
@@ -159,8 +155,14 @@ def run_target(
                 coverage_set = collector.collect_coverage(proc.pid, timeout, exe=target, libs=libs)
             else:
                 collector = coverage.get_collector()
-                logging.debug("Using native collector: %s, will use PTRACE_ATTACH.", collector.__class__.__name__)
-                coverage_set = collector.collect_coverage(proc.pid, timeout, exe=target, already_traced=False, libs=libs)
+                logging.debug("Using native collector: %s (PTRACE_TRACEME strategy).", collector.__class__.__name__)
+                coverage_set = collector.collect_coverage(
+                    proc.pid,
+                    timeout,
+                    exe=target,
+                    already_traced=True, # Correct for PTRACE_TRACEME
+                    libs=libs
+                )
         except FileNotFoundError:
             logging.debug(
                 "Process %d exited before coverage collection", proc.pid
