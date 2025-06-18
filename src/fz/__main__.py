@@ -58,35 +58,21 @@ class Fuzzer:
                 "Run returned %d coverage entries", len(coverage_set)
             )
 
-        if crashed or timed_out:
-            prefix = "crash" if crashed else "timeout"
-            saved, orig = self.corpus.save_input(
-                data,
-                coverage_set,
-                prefix,
-                stdout_data,
-                stderr_data,
-                exit_code=exit_code,
-            )
-            if saved and self.minimize:
-                self.corpus.minimize_input(
-                    orig,
-                    target,
-                    timeout,
-                    file_input=file_input if not network else False,
-                    network=network if network else None,
-                    libs=libs,
-                )
+        category = "interesting"
+        if crashed:
+            category = "crash"
+        elif timed_out:
+            category = "timeout"
 
-        interesting, path = self.corpus.save_input(
+        saved, path = self.corpus.save_input(
             data,
             coverage_set,
-            "interesting",
+            category,
             stdout_data,
             stderr_data,
             exit_code=exit_code,
         )
-        if interesting and self.minimize:
+        if saved and self.minimize:
             self.corpus.minimize_input(
                 path,
                 target,
@@ -96,7 +82,7 @@ class Fuzzer:
                 libs=libs,
             )
         self.cfg.add_edges(coverage_set)
-        return interesting, coverage_set
+        return saved, coverage_set
 
     def _fuzz_loop(self, args, iter_counter=None, saved_counter=None):
 
