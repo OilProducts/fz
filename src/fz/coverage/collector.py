@@ -112,6 +112,7 @@ class CoverageCollector(ABC):
         coverage: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
         prev_addr: Optional[tuple[str, int]] = None
         word_cache = {}
+        regs = user_regs_struct() # Define regs early for use throughout the function
 
         exe_path = self._resolve_exe(pid, exe) # Renamed to avoid conflict with outer scope 'exe' in loops
         effective_libs = libs or []
@@ -335,7 +336,8 @@ class CoverageCollector(ABC):
                 logging.error("PTRACE_DETACH also failed for pid %d (errno %d: %s)", pid, e_detach.errno, os.strerror(e_detach.errno))
             return coverage
 
-        # Note: `regs` and `end_time` are already defined earlier in the function.
+        # `regs` is defined earlier. `end_time` for this loop is defined here.
+        end_time = time.time() + timeout * 2
         while True:
             try:
                 wpid, status = os.waitpid(pid, os.WNOHANG)
