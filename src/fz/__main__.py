@@ -197,16 +197,26 @@ class Fuzzer:
                 processes.append(p)
 
             try:
-                table = None
+                make_table = None
                 try:
                     from rich.live import Live
                     from rich.table import Table
-                    table = Table()
-                    table.add_column("Iterations", justify="right")
-                    table.add_column("Saved", justify="right")
-                    table.add_column("Rate", justify="right")
-                    table.add_column("Corpus", justify="right")
-                    table.add_column("Edges", justify="right")
+
+                    def make_table(iters, saves, rate, samples, edges):
+                        table = Table()
+                        table.add_column("Iterations", justify="right")
+                        table.add_column("Saved", justify="right")
+                        table.add_column("Rate", justify="right")
+                        table.add_column("Corpus", justify="right")
+                        table.add_column("Edges", justify="right")
+                        table.add_row(
+                            str(iters),
+                            str(saves),
+                            f"{rate:.2f}/sec",
+                            str(samples),
+                            str(edges),
+                        )
+                        return table
                 except Exception:
                     Live = None
 
@@ -216,20 +226,12 @@ class Fuzzer:
                     saves = saved_counter.value
                     rate = iters / elapsed if elapsed > 0 else 0.0
                     samples, edges = corpus_stats(args.corpus_dir)
-                    if table is None:
+                    if make_table is None:
                         return (
                             f"iters={iters} saved={saves} rate={rate:.2f}/sec "
                             f"corpus={samples} edges={edges}"
                         )
-                    table.rows = []
-                    table.add_row(
-                        str(iters),
-                        str(saves),
-                        f"{rate:.2f}/sec",
-                        str(samples),
-                        str(edges),
-                    )
-                    return table
+                    return make_table(iters, saves, rate, samples, edges)
 
                 if Live:
                     with Live(snapshot(), refresh_per_second=1) as live:
