@@ -179,6 +179,7 @@ python3 -m fz --target /path/to/binary --iterations 100 --corpus-dir ./out
 
 This main script is minimal and will evolve alongside the project's features.
 Use `--debug` to enable verbose debug logging.
+Use `--minimize` to enable delta-debugging on newly saved inputs.
 
 ## Coverage Collector Architecture
 

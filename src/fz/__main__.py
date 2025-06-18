@@ -26,9 +26,10 @@ PTRACE_TRACEME = 0
 class Fuzzer:
     """Base fuzzer scaffold with simple coverage tracking."""
 
-    def __init__(self, corpus_dir: str = "corpus", output_bytes: int = 0):
+    def __init__(self, corpus_dir: str = "corpus", output_bytes: int = 0, minimize: bool = False):
         self.corpus = Corpus(corpus_dir, output_bytes)
         self.cfg = ControlFlowGraph()
+        self.minimize = minimize
 
     def _run_once(self, target, data, timeout, file_input=False, network=None, libs=None, qemu_user=None, gdb_port=1234, arch=None):
         """Execute target once and record coverage."""
@@ -67,7 +68,7 @@ class Fuzzer:
                 stderr_data,
                 exit_code=exit_code,
             )
-            if saved:
+            if saved and self.minimize:
                 self.corpus.minimize_input(
                     orig,
                     target,
@@ -85,7 +86,7 @@ class Fuzzer:
             stderr_data,
             exit_code=exit_code,
         )
-        if interesting:
+        if interesting and self.minimize:
             self.corpus.minimize_input(
                 path,
                 target,
@@ -269,7 +270,7 @@ def _worker(args, iter_counter=None, saved_counter=None):
     if not logging.getLogger().hasHandlers():
         level = logging.DEBUG if getattr(args, "debug", False) else logging.INFO
         logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
-    fuzzer = Fuzzer(args.corpus_dir, args.output_bytes)
+    fuzzer = Fuzzer(args.corpus_dir, args.output_bytes, args.minimize)
     fuzzer._fuzz_loop(args, iter_counter, saved_counter)
 
 def parse_args():
@@ -376,6 +377,11 @@ def parse_args():
         help="Directory to store interesting test cases",
     )
     parser.add_argument(
+        "--minimize",
+        action="store_true",
+        help="Minimize saved crashing and interesting inputs",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging",
@@ -401,7 +407,7 @@ def main():
     args = parse_args()
     level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(level=level, format="%(asctime)s [%(levelname)s] %(message)s")
-    fuzzer = Fuzzer(args.corpus_dir, args.output_bytes)
+    fuzzer = Fuzzer(args.corpus_dir, args.output_bytes, args.minimize)
     fuzzer.run(args)
 
 
