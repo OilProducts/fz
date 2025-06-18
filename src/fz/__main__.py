@@ -170,6 +170,9 @@ class Fuzzer:
             import multiprocessing
             from fz.corpus.corpus import corpus_stats
 
+            possible_edges = get_possible_edges(args.target)
+            total_edges = len(possible_edges)
+
             ctx = multiprocessing.get_context()
             iter_counter = ctx.Value('i', 0)
             saved_counter = ctx.Value('i', 0)
@@ -211,13 +214,18 @@ class Fuzzer:
                     iters = iter_counter.value
                     saves = saved_counter.value
                     rate = iters / elapsed if elapsed > 0 else 0.0
-                    samples, edges = corpus_stats(args.corpus_dir)
+                    samples, edges_cov = corpus_stats(args.corpus_dir)
+                    edges_str = (
+                        f"{edges_cov}/{total_edges}"
+                        if total_edges
+                        else str(edges_cov)
+                    )
                     if make_table is None:
                         return (
                             f"iters={iters} saved={saves} rate={rate:.2f}/sec "
-                            f"corpus={samples} edges={edges}"
+                            f"corpus={samples} edges={edges_str}"
                         )
-                    return make_table(iters, saves, rate, samples, edges)
+                    return make_table(iters, saves, rate, samples, edges_str)
 
                 if Live:
                     with Live(snapshot(), refresh_per_second=1) as live:
@@ -246,9 +254,12 @@ class Fuzzer:
                 )
             else:
                 logging.info("Executed %d iterations", total_iters)
-            samples, edges = corpus_stats(args.corpus_dir)
+            samples, edges_cov = corpus_stats(args.corpus_dir)
+            edges_info = (
+                f"{edges_cov}/{total_edges}" if total_edges else str(edges_cov)
+            )
             logging.info("Corpus entries: %d (+%d new)", samples, total_saved)
-            logging.info("Unique coverage edges: %d", edges)
+            logging.info("Unique coverage edges: %s", edges_info)
             return
 
         self._fuzz_loop(args)
