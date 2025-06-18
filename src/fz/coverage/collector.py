@@ -71,6 +71,146 @@ class CoverageCollector(ABC):
             logging.debug("Library %s not found in process", lib)
         return modules
 
+    def _set_breakpoint(self, pid: int, addr: int, word_cache: dict) -> tuple:
+        """Insert a breakpoint at ``addr`` and return bookkeeping info."""
+        if ARCH in ("aarch64", "arm64"):
+            word_addr = addr & ~7
+            offset = addr & 7
+            if word_addr not in word_cache:
+                orig_word = _ptrace_peek(pid, word_addr)
+                patched_word = orig_word
+                patches = set()
+            else:
+                orig_word, patched_word, patches = word_cache[word_addr]
+            if offset == 0:
+                patched_word = (patched_word & ~0xFFFFFFFF) | BREAKPOINT
+            else:
+                patched_word = (patched_word & 0xFFFFFFFF) | (BREAKPOINT << 32)
+            _ptrace_poke(pid, word_addr, patched_word)
+            patches.add(offset)
+            word_cache[word_addr] = (orig_word, patched_word, patches)
+            return (word_addr, offset)
+        orig = _ptrace_peek(pid, addr)
+        _ptrace_poke(pid, addr, (orig & ~0xFF) | BREAKPOINT)
+        return (orig,)
+
+    def _remove_breakpoint(self, pid: int, addr: int, info: tuple, word_cache: dict) -> None:
+        """Restore the instruction replaced by a breakpoint."""
+        if ARCH in ("aarch64", "arm64"):
+            word_addr, offset = info[:2]
+            orig_word, patched_word, patches = word_cache.get(word_addr, (0, 0, set()))
+            if offset == 0:
+                patched_word = (patched_word & ~0xFFFFFFFF) | (orig_word & 0xFFFFFFFF)
+            else:
+                patched_word = (patched_word & 0xFFFFFFFF) | (orig_word & 0xFFFFFFFF00000000)
+            patches.discard(offset)
+            if not patches:
+                _ptrace_poke(pid, word_addr, orig_word)
+                word_cache.pop(word_addr, None)
+            else:
+                _ptrace_poke(pid, word_addr, patched_word)
+                word_cache[word_addr] = (orig_word, patched_word, patches)
+        else:
+            orig = info[0]
+            _ptrace_poke(pid, addr, orig)
+
+    def _insert_breakpoints(self, pid: int, modules: list[tuple[str, int]], word_cache: dict) -> dict:
+        """Insert breakpoints for the basic blocks of ``modules``."""
+        blocks: list[tuple[str, int, int]] = []
+        for path, mbase in modules:
+            for b in get_basic_blocks(path):
+                blocks.append((path, mbase, b))
+        breakpoints = {}
+        for path, mbase, off in blocks:
+            addr = mbase + off
+            try:
+                bp_info = self._set_breakpoint(pid, addr, word_cache)
+                breakpoints[addr] = (*bp_info, path, mbase)
+                logging.debug("Breakpoint inserted at %#x", addr)
+            except OSError as e:
+                logging.debug("Failed to insert breakpoint at %#x: %s", addr, e)
+        return breakpoints
+
+    def _handle_breakpoint_hit(
+        self,
+        pid: int,
+        addr: int,
+        info: tuple,
+        word_cache: dict,
+        regs: user_regs_struct,
+    ) -> tuple[str, int]:
+        """Process a breakpoint hit and single-step over it."""
+        if ARCH in ("aarch64", "arm64"):
+            word_addr, offset, mod_path, mod_base = info
+        else:
+            orig, mod_path, mod_base = info
+        curr = (mod_path, addr - mod_base)
+        self._remove_breakpoint(pid, addr, info, word_cache)
+        set_pc(regs, addr)
+        _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
+        _ptrace(PTRACE_SINGLESTEP, pid)
+        os.waitpid(pid, 0)
+        return curr
+
+    def _trace_process(
+        self,
+        pid: int,
+        breakpoints: dict,
+        word_cache: dict,
+        timeout: float,
+    ) -> Set[tuple[tuple[str, int], tuple[str, int]]]:
+        """Run the tracing loop until timeout and return collected edges."""
+        coverage: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
+        prev_addr: Optional[tuple[str, int]] = None
+        regs = user_regs_struct()
+        _ptrace(PTRACE_CONT, pid)
+        end_time = time.time() + timeout * 2
+        while True:
+            try:
+                wpid, status = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                logging.debug("Child process %d disappeared", pid)
+                break
+            if wpid == 0:
+                if time.time() > end_time:
+                    logging.debug("Coverage wait timed out")
+                    break
+                time.sleep(0)
+                continue
+            if os.WIFEXITED(status) or os.WIFSIGNALED(status):
+                break
+            if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:
+                _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
+                pc = get_pc(regs)
+                addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
+                if addr in breakpoints:
+                    info = breakpoints.pop(addr)
+                    curr = self._handle_breakpoint_hit(pid, addr, info, word_cache, regs)
+                    if prev_addr is not None:
+                        coverage.add((prev_addr, curr))
+                    prev_addr = curr
+            _ptrace(PTRACE_CONT, pid)
+        return coverage
+
+    def _restore_breakpoints(self, pid: int, breakpoints: dict, word_cache: dict) -> None:
+        """Restore all breakpoints and detach from the process."""
+        try:
+            for addr, info in breakpoints.items():
+                try:
+                    self._remove_breakpoint(pid, addr, info, word_cache)
+                except OSError as e:
+                    if e.errno == errno.ESRCH:
+                        logging.debug(
+                            "Process %d disappeared while restoring breakpoints",
+                            pid,
+                        )
+                        break
+                    logging.debug("Failed to restore breakpoint at %#x: %s", addr, e)
+            _ptrace(PTRACE_DETACH, pid)
+            logging.debug("Detached from pid %d", pid)
+        except OSError as e:
+            logging.debug("Failed to detach from pid %d: %s", pid, e)
+
     def collect_coverage(
         self,
         pid: int,
@@ -101,7 +241,6 @@ class CoverageCollector(ABC):
         """
         logging.debug("Collecting coverage for pid %d", pid)
         coverage: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
-        prev_addr: Optional[tuple[str, int]] = None
         word_cache = {}
 
         exe = self._resolve_exe(pid, exe)
@@ -124,123 +263,11 @@ class CoverageCollector(ABC):
             modules.extend(self._wait_for_libraries(pid, libs, timeout))
 
         logging.debug("Inserting breakpoints for block coverage")
-        blocks = []
-        for path, mbase in modules:
-            for b in get_basic_blocks(path):
-                blocks.append((path, mbase, b))
-        breakpoints = {}
-        for path, mbase, off in blocks:
-            b = mbase + off
-            try:
-                if ARCH in ("aarch64", "arm64"):
-                    word_addr = b & ~7
-                    offset = b & 7
-                    if word_addr not in word_cache:
-                        orig_word = _ptrace_peek(pid, word_addr)
-                        patched_word = orig_word
-                        patches = set()
-                    else:
-                        orig_word, patched_word, patches = word_cache[word_addr]
-                    if offset == 0:
-                        patched_word = (patched_word & ~0xFFFFFFFF) | BREAKPOINT
-                    else:
-                        patched_word = (patched_word & 0xFFFFFFFF) | (BREAKPOINT << 32)
-                    _ptrace_poke(pid, word_addr, patched_word)
-                    patches.add(offset)
-                    word_cache[word_addr] = (orig_word, patched_word, patches)
-                    breakpoints[b] = (word_addr, offset, path, mbase)
-                else:
-                    orig = _ptrace_peek(pid, b)
-                    breakpoints[b] = (orig, path, mbase)
-                    _ptrace_poke(pid, b, (orig & ~0xFF) | BREAKPOINT)
-                logging.debug("Breakpoint inserted at %#x", b)
-            except OSError as e:
-                logging.debug("Failed to insert breakpoint at %#x: %s", b, e)
-                continue
+        breakpoints = self._insert_breakpoints(pid, modules, word_cache)
 
-        _ptrace(PTRACE_CONT, pid)
-        regs = user_regs_struct()
-        end_time = time.time() + timeout * 2
-        while True:
-            try:
-                wpid, status = os.waitpid(pid, os.WNOHANG)
-            except ChildProcessError:
-                logging.debug("Child process %d disappeared", pid)
-                break
-            if wpid == 0:
-                if time.time() > end_time:
-                    logging.debug("Coverage wait timed out")
-                    break
-                time.sleep(0)
-                continue
-            if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-                break
-            if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGTRAP:
-                _ptrace(PTRACE_GETREGS, pid, 0, ctypes.addressof(regs))
-                pc = get_pc(regs)
-                addr = pc - (4 if ARCH in ("aarch64", "arm64") else 1)
-                if addr in breakpoints:
-                    info = breakpoints.pop(addr)
-                    if ARCH in ("aarch64", "arm64"):
-                        word_addr, offset, mod_path, mod_base = info
-                    else:
-                        orig, mod_path, mod_base = info
-                    curr = (mod_path, addr - mod_base)
-                    if prev_addr is not None:
-                        coverage.add((prev_addr, curr))
-                    prev_addr = curr
-                    logging.debug("Hit breakpoint at %#x", addr)
-                    if ARCH in ("aarch64", "arm64"):
-                        orig_word, patched_word, patches = word_cache[word_addr]
-                        if offset == 0:
-                            patched_word = (patched_word & ~0xFFFFFFFF) | (orig_word & 0xFFFFFFFF)
-                        else:
-                            patched_word = (patched_word & 0xFFFFFFFF) | (orig_word & 0xFFFFFFFF00000000)
-                        patches.discard(offset)
-                        if not patches:
-                            _ptrace_poke(pid, word_addr, orig_word)
-                            del word_cache[word_addr]
-                        else:
-                            _ptrace_poke(pid, word_addr, patched_word)
-                            word_cache[word_addr] = (orig_word, patched_word, patches)
-                        set_pc(regs, addr)
-                    else:
-                        _ptrace_poke(pid, addr, orig)
-                        set_pc(regs, addr)
-                    _ptrace(PTRACE_SETREGS, pid, 0, ctypes.addressof(regs))
-                    _ptrace(PTRACE_SINGLESTEP, pid)
-                    os.waitpid(pid, 0)
-            _ptrace(PTRACE_CONT, pid)
+        coverage = self._trace_process(pid, breakpoints, word_cache, timeout)
 
-        try:
-            for addr, info in breakpoints.items():
-                try:
-                    if ARCH in ("aarch64", "arm64"):
-                        word_addr, offset, _mod_path, _mod_base = info
-                        orig_word, patched_word, patches = word_cache.get(word_addr, (0, 0, set()))
-                        if offset == 0:
-                            patched_word = (patched_word & ~0xFFFFFFFF) | (orig_word & 0xFFFFFFFF)
-                        else:
-                            patched_word = (patched_word & 0xFFFFFFFF) | (orig_word & 0xFFFFFFFF00000000)
-                        patches.discard(offset)
-                        if not patches:
-                            _ptrace_poke(pid, word_addr, orig_word)
-                            word_cache.pop(word_addr, None)
-                        else:
-                            _ptrace_poke(pid, word_addr, patched_word)
-                            word_cache[word_addr] = (orig_word, patched_word, patches)
-                    else:
-                        orig, _mod_path, _mod_base = info
-                        _ptrace_poke(pid, addr, orig)
-                except OSError as e:
-                    if e.errno == errno.ESRCH:
-                        logging.debug("Process %d disappeared while restoring breakpoints", pid)
-                        break
-                    logging.debug("Failed to restore breakpoint at %#x: %s", addr, e)
-            _ptrace(PTRACE_DETACH, pid)
-            logging.debug("Detached from pid %d", pid)
-        except OSError as e:
-            logging.debug("Failed to detach from pid %d: %s", pid, e)
+        self._restore_breakpoints(pid, breakpoints, word_cache)
 
         logging.debug("Collected %d basic block transitions", len(coverage))
         return coverage
