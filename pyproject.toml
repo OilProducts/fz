@@ -11,7 +11,7 @@ requires-python = ">=3.8"
 
 [project.scripts]
 fz = "fz.__main__:main"
-fz-corpus-analyzer = "fz.corpus.analyzer:main"
+fz-corpus = "fz.corpus.manager:main"
 fz-cfg = "fz.coverage.visualize:main"
 
 [tool.setuptools.packages.find]
