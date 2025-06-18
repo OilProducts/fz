@@ -40,3 +40,16 @@ def test_interesting_prefix(tmp_path):
     saved, path = corpus.save_input(b"A", cov, "interesting")
     assert saved
     assert os.path.basename(path).startswith("interesting-")
+
+
+def test_load_existing_coverage(tmp_path):
+    corpus = Corpus(str(tmp_path))
+    cov = {(1, 2, 3, 4)}
+    saved, path = corpus.save_input(b"A", cov)
+    assert saved
+
+    # New instance should load existing coverage and avoid duplicates
+    corpus2 = Corpus(str(tmp_path))
+    saved, path = corpus2.save_input(b"B", cov)
+    assert not saved
+    assert path is None
