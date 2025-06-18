@@ -11,7 +11,7 @@ from elftools.elf.elffile import ELFFile
 from abc import ABC, abstractmethod
 from typing import Optional, Set
 
-from .utils import get_basic_blocks
+from .utils import get_basic_blocks, get_text_base
 from .common import _ptrace, _ptrace_peek, _ptrace_poke
 
 ARCH = platform.machine().lower()
@@ -128,11 +128,12 @@ class CoverageCollector(ABC):
         logging.debug("Inserting breakpoints for block coverage")
         blocks = []
         for path, mbase in modules:
+            text_base = get_text_base(path)
             for b in get_basic_blocks(path):
-                blocks.append((path, mbase, b))
+                blocks.append((path, mbase, text_base, b))
         breakpoints = {}
-        for path, mbase, off in blocks:
-            b = mbase + off
+        for path, mbase, text_base, off in blocks:
+            b = mbase + text_base + off
             try:
                 if ARCH in ("aarch64", "arm64"):
                     word_addr = b & ~7
