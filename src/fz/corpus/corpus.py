@@ -56,7 +56,8 @@ class Corpus:
             if exit_code is not None:
                 hash_input += f":{exit_code}".encode()
             cov_hash = hashlib.sha1(hash_input).hexdigest()
-            path = os.path.join(self.directory, cov_hash + ".json")
+            filename = cov_hash
+            path = os.path.join(self.directory, f"{category}-{filename}.json")
 
             if cov_hash in self.coverage_hashes or os.path.exists(path):
                 logging.debug("Input with identical coverage already stored")
@@ -76,8 +77,8 @@ class Corpus:
                 self.coverage.update(coverage)
                 return False, None
             self.coverage.update(coverage)
-            filename = f"{category}-{int(time.time() * 1000)}.json"
-            path = os.path.join(self.directory, filename)
+            filename = str(time.time_ns())
+            path = os.path.join(self.directory, f"{category}-{filename}.json")
 
         with open(path, "w") as f:
             json.dump(record, f)

@@ -8,6 +8,7 @@ def test_crash_only_saved_on_new_coverage(tmp_path):
     saved, path = corpus.save_input(b"A", cov1, "crash")
     assert saved
     assert os.path.exists(path)
+    assert os.path.basename(path).startswith("crash-")
     assert len(os.listdir(tmp_path)) == 1
 
     saved, path = corpus.save_input(b"B", cov1, "crash")
@@ -19,4 +20,13 @@ def test_crash_only_saved_on_new_coverage(tmp_path):
     saved, path = corpus.save_input(b"C", cov2, "crash")
     assert saved
     assert os.path.exists(path)
+    assert os.path.basename(path).startswith("crash-")
     assert len(os.listdir(tmp_path)) == 2
+
+
+def test_interesting_prefix(tmp_path):
+    corpus = Corpus(str(tmp_path))
+    cov = {(1, 2, 3, 4)}
+    saved, path = corpus.save_input(b"A", cov, "interesting")
+    assert saved
+    assert os.path.basename(path).startswith("interesting-")
