@@ -9,7 +9,7 @@ Install the package in editable mode (Python 3.8+):
 pip install -e .
 ```
 
-This installs the `fz`, `fz-corpus-analyzer`, and `fz-cfg` commands.
+This installs the `fz`, `fz-corpus`, and `fz-cfg` commands.
 
 ## Quick Usage
 
@@ -40,7 +40,7 @@ fz --config config.yaml
 Inspect saved samples:
 
 ```bash
-fz-corpus-analyzer --corpus-dir ./corpus
+fz-corpus list --corpus-dir ./corpus
 ```
 
 Generate a control flow graph:
@@ -250,12 +250,12 @@ python3 -m fz --config config.yaml
 
 ## Corpus Analysis
 
-Use the `fz.corpus.analyzer` module to inspect the saved samples. The script prints the
-captured stdout, stderr, and length of the input for each entry in the corpus
-directory.
+Use the `fz.corpus.manager` module to inspect or add samples. The ``list``
+command prints the captured stdout, stderr, and length of the input for each
+entry in the corpus directory.
 
 ```bash
-python3 -m fz.corpus.analyzer --corpus-dir ./corpus
+python3 -m fz.corpus.manager list --corpus-dir ./corpus
 ```
 
 ## Control Flow Graph Visualization
