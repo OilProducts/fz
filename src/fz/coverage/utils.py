@@ -2,10 +2,12 @@ import logging
 import os
 import platform
 
-from typing import List, Set, Tuple
+from typing import List, Set
 from capstone import Cs, CS_ARCH_X86, CS_ARCH_ARM64, CS_MODE_64, CS_MODE_ARM
 from capstone import CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_OP_IMM
 from elftools.elf.elffile import ELFFile
+
+from .cfg import Edge
 
 _block_cache = {}
 _edge_cache = {}
@@ -90,7 +92,7 @@ def get_basic_blocks(exe: str) -> List[int]:
 
 
 
-def get_possible_edges(exe: str) -> Set[Tuple[Tuple[str, int], Tuple[str, int]]]:
+def get_possible_edges(exe: str) -> Set[Edge]:
     """Return a set of possible control flow edges for ``exe``.
 
     The edges are determined using a light-weight disassembly of the ``.text``
@@ -103,7 +105,7 @@ def get_possible_edges(exe: str) -> Set[Tuple[Tuple[str, int], Tuple[str, int]]]
 
     Returns
     -------
-    set[tuple[tuple[str, int], tuple[str, int]]]
+    set[Edge]
         All edges ``((module, src), (module, dst))`` that may be taken at runtime.
     """
     exe = os.path.realpath(exe)

@@ -11,6 +11,8 @@ from elftools.elf.elffile import ELFFile
 from abc import ABC, abstractmethod
 from typing import Optional, Set
 
+from .cfg import Edge
+
 from .utils import get_basic_blocks
 from .common import (
     _ptrace,
@@ -158,9 +160,9 @@ class CoverageCollector(ABC):
         breakpoints: dict,
         word_cache: dict,
         timeout: float,
-    ) -> Set[tuple[tuple[str, int], tuple[str, int]]]:
+    ) -> Set[Edge]:
         """Run the tracing loop until timeout and return collected edges."""
-        coverage: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
+        coverage: Set[Edge] = set()
         prev_addr: Optional[tuple[str, int]] = None
         regs = user_regs_struct()
         _ptrace(PTRACE_CONT, pid)
@@ -218,7 +220,7 @@ class CoverageCollector(ABC):
         exe: Optional[str] = None,
         already_traced: bool = False,
         libs: Optional[list[str]] = None,
-    ) -> Set[tuple[tuple[str, int], tuple[str, int]]]:
+    ) -> Set[Edge]:
         """Collect basic block transition coverage from a traced process.
 
         Parameters
@@ -235,12 +237,12 @@ class CoverageCollector(ABC):
 
         Returns
         -------
-        set[tuple[tuple[str, int], tuple[str, int]]]
+        set[Edge]
             The set of executed basic block transitions as
             ``((module, src), (module, dst))`` pairs.
         """
         logging.debug("Collecting coverage for pid %d", pid)
-        coverage: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
+        coverage: Set[Edge] = set()
         word_cache = {}
 
         exe = self._resolve_exe(pid, exe)
