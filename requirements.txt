@@ -2,4 +2,5 @@ capstone
 pyelftools
 pyyaml
 rich
+macholib
 

@@ -6,6 +6,8 @@ from typing import List, Set
 from capstone import Cs, CS_ARCH_X86, CS_ARCH_ARM64, CS_MODE_64, CS_MODE_ARM
 from capstone import CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_OP_IMM
 from elftools.elf.elffile import ELFFile
+from macholib.MachO import MachO
+from macholib.mach_o import CPU_TYPE_NAMES
 
 from .cfg import Edge
 
@@ -28,11 +30,53 @@ def _load_text(exe: str) -> tuple[bytes, int]:
         section's load address.
     """
     with open(exe, "rb") as f:
-        elf = ELFFile(f)
-        text = elf.get_section_by_name(".text")
-        if text is None:
-            raise ValueError(".text section not found")
-        return text.data(), text["sh_addr"]
+        magic = f.read(4)
+
+    if magic == b"\x7fELF":
+        with open(exe, "rb") as f:
+            elf = ELFFile(f)
+            text = elf.get_section_by_name(".text")
+            if text is None:
+                raise ValueError(".text section not found")
+            return text.data(), text["sh_addr"]
+
+    MACHO_MAGICS = {
+        b"\xfe\xed\xfa\xce",
+        b"\xce\xfa\xed\xfe",
+        b"\xfe\xed\xfa\xcf",
+        b"\xcf\xfa\xed\xfe",
+        b"\xca\xfe\xba\xbe",
+        b"\xbe\xba\xfe\xca",
+        b"\xca\xfe\xba\xbf",
+        b"\xbf\xba\xfe\xca",
+    }
+    if magic in MACHO_MAGICS:
+        return _load_text_macho(exe)
+
+    raise ValueError("unsupported binary format")
+
+
+def _load_text_macho(exe: str) -> tuple[bytes, int]:
+    """Return the ``__TEXT,__text`` section bytes and load address."""
+    arch = platform.machine().lower()
+    target = "ARM64" if arch in ("arm64", "aarch64") else "x86_64"
+    cpu_type = next(k for k, v in CPU_TYPE_NAMES.items() if v == target)
+
+    m = MachO(exe)
+    with open(exe, "rb") as f:
+        for header in m.headers:
+            if header.header.cputype != cpu_type:
+                continue
+            for load_cmd, cmd, data in header.commands:
+                name = load_cmd.get_cmd_name()
+                if name in ("LC_SEGMENT", "LC_SEGMENT_64"):
+                    for sec in data:
+                        seg = sec.segname.rstrip(b"\x00").decode()
+                        sect = sec.sectname.rstrip(b"\x00").decode()
+                        if seg == "__TEXT" and sect == "__text":
+                            f.seek(sec.offset)
+                            return f.read(sec.size), sec.addr
+    raise ValueError("__TEXT,__text section not found")
 
 
 def _get_disassembler():
@@ -52,7 +96,7 @@ def get_basic_blocks(exe: str) -> List[int]:
     Parameters
     ----------
     exe:
-        Path to the ELF binary to analyze.
+        Path to the executable to analyze.
 
     Returns
     -------
@@ -101,7 +145,7 @@ def get_possible_edges(exe: str) -> Set[Edge]:
     Parameters
     ----------
     exe:
-        Path to the ELF binary to analyze.
+        Path to the executable to analyze.
 
     Returns
     -------
