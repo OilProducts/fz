@@ -10,6 +10,8 @@ python3 -m fz --file-input --corpus-dir ./corpus/ --target /usr/bin/file --itera
 pytest -q
 ```
 
+macOS users must have `macholib` installed.
+
 This verifies bytecode compilation of the source tree and exercises basic block coverage using a known system binary.
 
 ## Test Fixture Compilation

@@ -7,6 +7,8 @@ Install the package in editable mode (Python 3.8+):
 
 ```bash
 pip install -e .
+# macOS users also need macholib for Mach-O support
+pip install macholib
 ```
 
 This installs the `fz`, `fz-corpus`, and `fz-cfg` commands.
@@ -293,6 +295,7 @@ python3 -m fz --file-input --corpus-dir ./corpus/ --target /usr/bin/file --itera
 python3 -m fz --file-input --corpus-dir ./corpus/ --target /usr/bin/file --iterations 2  # optional sanity check
 pytest -q
 ```
+
 
 These commands verify the source tree compiles, a basic fuzzing run executes, and all tests pass.
 
