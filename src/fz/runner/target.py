@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 from typing import Set, Tuple, Optional
 
+from fz.coverage.cfg import Edge
+
 from fz import coverage
 
 libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
@@ -24,7 +26,7 @@ def run_target(
     arch: Optional[str] = None,
     env: Optional[dict[str, str]] = None,
 ) -> Tuple[
-    Set[tuple[tuple[str, int], tuple[str, int]]],
+    Set[Edge],
     bool,
     bool,
     int | None,
@@ -35,10 +37,10 @@ def run_target(
 
     Returns
     -------
-    Set[tuple], bool, bool, int | None, bytes, bytes
+    Set[Edge], bool, bool, int | None, bytes, bytes
         ``(coverage_set, crashed, timed_out, exit_code, stdout, stderr)``
     """
-    coverage_set: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
+    coverage_set: Set[Edge] = set()
     exit_code: int | None = None
     stdout_file = tempfile.TemporaryFile()
     stderr_file = tempfile.TemporaryFile()

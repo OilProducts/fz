@@ -7,6 +7,8 @@ Install the package in editable mode (Python 3.8+):
 
 ```bash
 pip install -e .
+# macOS users also need macholib for Mach-O support
+pip install macholib
 ```
 
 This installs the `fz`, `fz-corpus`, and `fz-cfg` commands.
@@ -160,7 +162,7 @@ python3 -m fz --target ./target_arm64 --qemu-user qemu-aarch64 --arch arm64
 
 Coverage is gathered automatically using `ptrace`. The addresses recorded are
 normalized to the binary's load base so identical inputs yield identical
-coverage sets across runs. Inputs that execute new basic block transitions are stored in
+coverage sets across runs. Inputs that execute a unique set of basic block transitions are stored in
 the corpus directory. Use `--corpus-dir` to change
 where these inputs are saved. Basic block transition coverage via breakpoints is always
 enabled.
@@ -203,7 +205,7 @@ executed. The mutator weights seeds by the amount of coverage they produced and
 applies simple strategies such as bit flipping, splicing two seeds together,
 and inserting or deleting bytes. Each new input can be mutated multiple times in
 sequence (controlled by `--mutations`), allowing combinations of these
-operations. Whenever a run yields new coverage the input is added to the pool so
+operations. Whenever a run yields a unique coverage set the input is added to the pool so
 future mutations build on the most interesting cases.
 
 ## Fuzzing a Network Service
@@ -293,6 +295,7 @@ python3 -m fz --file-input --corpus-dir ./corpus/ --target /usr/bin/file --itera
 python3 -m fz --file-input --corpus-dir ./corpus/ --target /usr/bin/file --iterations 2  # optional sanity check
 pytest -q
 ```
+
 
 These commands verify the source tree compiles, a basic fuzzing run executes, and all tests pass.
 

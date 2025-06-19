@@ -171,6 +171,9 @@ class Fuzzer:
             from fz.corpus.corpus import corpus_stats
             from fz.coverage import get_possible_edges
 
+            possible_edges = get_possible_edges(args.target)
+            total_edges = len(possible_edges)
+
             ctx = multiprocessing.get_context()
             iter_counter = ctx.Value('i', 0)
             saved_counter = ctx.Value('i', 0)
@@ -218,9 +221,9 @@ class Fuzzer:
                     if make_table is None:
                         return (
                             f"iters={iters} saved={saves} rate={rate:.2f}/sec "
-                            f"corpus={samples} edges={edges}"
+                            f"corpus={samples} edges={edges_str}"
                         )
-                    return make_table(iters, saves, rate, samples, edges)
+                    return make_table(iters, saves, rate, samples, edges_str)
 
                 if Live:
                     with Live(snapshot(), refresh_per_second=1) as live:
@@ -253,6 +256,7 @@ class Fuzzer:
             logging.info("Corpus entries: %d (+%d new)", samples, total_saved)
             edge_info = f"{covered}/{total_edges}" if total_edges else str(covered)
             logging.info("Unique coverage edges: %s", edge_info)
+
             return
 
         self._fuzz_loop(args)

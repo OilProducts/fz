@@ -15,3 +15,14 @@ def test_basic_blocks_and_edges_cached(tiny_binary):
     edges2 = utils.get_possible_edges(exe)
     assert edges1 is edges2
     assert exe in utils._edge_cache
+
+
+def test_load_text_macho(macho_binary):
+    data, addr = utils._load_text(str(macho_binary))
+    assert data
+    assert addr == 0
+
+    blocks = utils.get_basic_blocks(str(macho_binary))
+    assert blocks
+    edges = utils.get_possible_edges(str(macho_binary))
+    assert edges

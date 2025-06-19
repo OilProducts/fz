@@ -3,7 +3,6 @@ import os
 import logging
 import json
 import base64
-import time
 import tempfile
 import subprocess
 from typing import Optional
@@ -12,7 +11,7 @@ from fz.runner.target import run_target
 
 
 class Corpus:
-    """Store inputs that produce new coverage."""
+    """Store inputs that exhibit unique coverage."""
 
     def __init__(self, directory: str = "corpus", output_bytes: int = 0):
         self.directory = directory
@@ -20,6 +19,29 @@ class Corpus:
         self.coverage = set()
         self.coverage_hashes = set()
         self.output_bytes = output_bytes
+        self._load_existing()
+
+    def _coverage_hash(self, coverage) -> str:
+        """Return a stable hash for *coverage*."""
+        hash_input = ",".join(str(c) for c in sorted(coverage)).encode()
+        return hashlib.sha1(hash_input).hexdigest()
+
+    def _load_existing(self) -> None:
+        """Populate coverage sets from the existing corpus."""
+        if not os.path.isdir(self.directory):
+            return
+        for name in os.listdir(self.directory):
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(self.directory, name)
+            try:
+                with open(path) as f:
+                    record = json.load(f)
+                edges = {tuple(e) for e in record.get("coverage", []) if len(e) == 4}
+            except Exception:
+                continue
+            self.coverage.update(edges)
+            self.coverage_hashes.add(self._coverage_hash(edges))
 
     def save_input(
         self,
@@ -32,10 +54,9 @@ class Corpus:
     ):
         """Persist *data* and associated *coverage*.
 
-        If *category* is "interesting", coverage is deduplicated using a hash of
-        the coverage set.  For other categories (e.g. "crash" or "timeout") a
-        timestamped file name is used.  The saved file is JSON formatted and
-        compatible with the existing corpus structure.
+        Coverage is deduplicated using a hash of the coverage set regardless of
+        *category*.  Saved files are JSON formatted and compatible with the
+        existing corpus structure.
         """
 
         record = {
@@ -51,34 +72,24 @@ class Corpus:
         if category != "interesting":
             record["type"] = category
 
-        if category == "interesting":
-            hash_input = ",".join(str(c) for c in record["coverage"]).encode()
-            if exit_code is not None:
-                hash_input += f":{exit_code}".encode()
-            cov_hash = hashlib.sha1(hash_input).hexdigest()
-            filename = cov_hash
-            path = os.path.join(self.directory, f"{category}-{filename}.json")
+        hash_input = ",".join(str(c) for c in record["coverage"]).encode()
+        cov_hash = hashlib.sha1(hash_input).hexdigest()
+        filename = cov_hash
+        path = os.path.join(self.directory, f"{category}-{filename}.json")
 
-            if cov_hash in self.coverage_hashes or os.path.exists(path):
-                logging.debug("Input with identical coverage already stored")
-                self.coverage.update(coverage)
-                return False, None
+        existing = [
+            os.path.join(self.directory, f"interesting-{cov_hash}.json"),
+            os.path.join(self.directory, f"crash-{cov_hash}.json"),
+            os.path.join(self.directory, f"timeout-{cov_hash}.json"),
+        ]
 
-            if not coverage - self.coverage:
-                logging.debug("Input did not yield new coverage")
-                self.coverage.update(coverage)
-                return False, None
-
+        if cov_hash in self.coverage_hashes or any(os.path.exists(p) for p in existing):
+            logging.debug("Input with identical coverage already stored")
             self.coverage.update(coverage)
-            self.coverage_hashes.add(cov_hash)
-        else:
-            if not coverage - self.coverage:
-                logging.debug("Input did not yield new coverage")
-                self.coverage.update(coverage)
-                return False, None
-            self.coverage.update(coverage)
-            filename = str(time.time_ns())
-            path = os.path.join(self.directory, f"{category}-{filename}.json")
+            return False, None
+
+        self.coverage.update(coverage)
+        self.coverage_hashes.add(cov_hash)
 
         with open(path, "w") as f:
             json.dump(record, f)
@@ -130,7 +141,7 @@ class Corpus:
             return path
 
         def test_input(inp: bytes) -> bool:
-            """Run *inp* and store any new coverage.
+            """Run *inp* and store any coverage discovered.
 
             Returns ``True`` if the candidate still crashes or times out.
             """

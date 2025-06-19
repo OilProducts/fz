@@ -3,17 +3,13 @@ import socket
 import time
 from typing import Optional, Set
 
+from .cfg import Edge
+
 from .collector import CoverageCollector
 from .utils import get_basic_blocks
-from ..arch import arm64 as arm64_arch
-from ..arch import x86 as x86_arch
+from .common import BREAKPOINT
 
-ARCHS = {
-    "x86_64": x86_arch,
-    "amd64": x86_arch,
-    "aarch64": arm64_arch,
-    "arm64": arm64_arch,
-}
+_SUPPORTED_ARCHS = {"x86_64", "amd64", "aarch64", "arm64"}
 
 
 class GDBRemote:
@@ -100,10 +96,9 @@ class QemuGdbCollector(CoverageCollector):
         self.host = host
         self.port = port
         self.arch = arch
-        if arch not in ARCHS:
+        if arch not in _SUPPORTED_ARCHS:
             raise RuntimeError(f"Unsupported arch: {arch}")
-        self.arch_mod = ARCHS[arch]
-        self.BREAKPOINT = self.arch_mod.BREAKPOINT
+        self.BREAKPOINT = BREAKPOINT
 
     def _resolve_exe(self, pid: int, exe: Optional[str]) -> Optional[str]:
         return exe
@@ -121,7 +116,7 @@ class QemuGdbCollector(CoverageCollector):
         exe: Optional[str] = None,
         already_traced: bool = False,
         libs: Optional[list[str]] = None,
-    ) -> Set[tuple[tuple[str, int], tuple[str, int]]]:
+    ) -> Set[Edge]:
         if exe is None:
             raise RuntimeError("Executable path required")
         gdb = GDBRemote(self.host, self.port)
@@ -139,7 +134,7 @@ class QemuGdbCollector(CoverageCollector):
                 logging.debug("Failed to set breakpoint at %#x: %s", addr, e)
         gdb.continue_()
         end_time = time.time() + timeout * 2
-        coverage: Set[tuple[tuple[str, int], tuple[str, int]]] = set()
+        coverage: Set[Edge] = set()
         prev = None
         while time.time() < end_time:
             reason = gdb._recv_packet()

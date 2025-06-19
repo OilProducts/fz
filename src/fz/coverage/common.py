@@ -2,6 +2,10 @@ import ctypes
 import ctypes.util
 import logging
 import os
+import platform
+
+from ..arch import arm64 as arm64_arch
+from ..arch import x86 as x86_arch
 
 libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
 libc.ptrace.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
@@ -9,6 +13,24 @@ libc.ptrace.restype = ctypes.c_long
 
 PTRACE_PEEKTEXT = 1
 PTRACE_POKETEXT = 4
+
+PTRACE_ATTACH = 16
+PTRACE_DETACH = 17
+PTRACE_CONT = 7
+PTRACE_SINGLESTEP = 9
+PTRACE_GETREGS = 12
+PTRACE_SETREGS = 13
+
+ARCH = platform.machine().lower()
+if ARCH in ("aarch64", "arm64"):
+    arch_mod = arm64_arch
+else:
+    arch_mod = x86_arch
+
+BREAKPOINT = arch_mod.BREAKPOINT
+user_regs_struct = arch_mod.user_regs_struct
+get_pc = arch_mod.get_pc
+set_pc = arch_mod.set_pc
 
 
 def _ptrace(request: int, pid: int, addr: int = 0, data: int = 0) -> int:
