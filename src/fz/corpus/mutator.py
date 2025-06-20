@@ -38,11 +38,15 @@ class Mutator:
                 with open(path, "r") as f:
                     record = json.load(f)
                 data = base64.b64decode(record.get("data", ""))
-                coverage = [
-                    ((c[0], c[1]), (c[2], c[3]))
-                    for c in record.get("coverage", [])
-                    if len(c) == 4
-                ]
+                coverage = []
+                for c in record.get("coverage", []):
+                    if (
+                        isinstance(c, (list, tuple))
+                        and len(c) == 2
+                        and all(isinstance(x, (list, tuple)) and len(x) == 2 for x in c)
+                    ):
+                        edge = (tuple(c[0]), tuple(c[1]))
+                        coverage.append(edge)
                 self.seeds.append(data)
                 self.seed_edges.append(coverage)
                 self.weights.append(max(1, len(coverage)))

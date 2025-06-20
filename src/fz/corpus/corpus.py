@@ -37,7 +37,15 @@ class Corpus:
             try:
                 with open(path) as f:
                     record = json.load(f)
-                edges = {tuple(e) for e in record.get("coverage", []) if len(e) == 4}
+                edges = set()
+                for c in record.get("coverage", []):
+                    if (
+                        isinstance(c, (list, tuple))
+                        and len(c) == 2
+                        and all(isinstance(x, (list, tuple)) and len(x) == 2 for x in c)
+                    ):
+                        edge = (tuple(c[0]), tuple(c[1]))
+                        edges.add(edge)
             except Exception:
                 continue
             self.coverage.update(edges)
@@ -219,7 +227,14 @@ def corpus_stats(directory: str) -> tuple[int, int]:
         try:
             with open(path) as f:
                 record = json.load(f)
-            edges.update(tuple(e) for e in record.get("coverage", []))
+            for c in record.get("coverage", []):
+                if (
+                    isinstance(c, (list, tuple))
+                    and len(c) == 2
+                    and all(isinstance(x, (list, tuple)) and len(x) == 2 for x in c)
+                ):
+                    edge = (tuple(c[0]), tuple(c[1]))
+                    edges.add(edge)
             entries += 1
         except Exception:
             continue
