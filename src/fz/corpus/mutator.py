@@ -7,6 +7,7 @@ from typing import List, Set, Iterable
 from fz.coverage.cfg import Edge
 
 from fz.coverage import ControlFlowGraph
+from .utils import decode_coverage
 
 
 class Mutator:
@@ -38,15 +39,7 @@ class Mutator:
                 with open(path, "r") as f:
                     record = json.load(f)
                 data = base64.b64decode(record.get("data", ""))
-                coverage = []
-                for c in record.get("coverage", []):
-                    if (
-                        isinstance(c, (list, tuple))
-                        and len(c) == 2
-                        and all(isinstance(x, (list, tuple)) and len(x) == 2 for x in c)
-                    ):
-                        edge = (tuple(c[0]), tuple(c[1]))
-                        coverage.append(edge)
+                coverage = list(decode_coverage(record.get("coverage", [])))
                 self.seeds.append(data)
                 self.seed_edges.append(coverage)
                 self.weights.append(max(1, len(coverage)))
