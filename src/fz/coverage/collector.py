@@ -13,7 +13,7 @@ from typing import Optional, Set
 
 from .cfg import Edge
 
-from .utils import get_basic_blocks
+from .utils import get_basic_blocks, _load_text
 from .common import (
     _ptrace,
     _ptrace_peek,
@@ -118,16 +118,21 @@ class CoverageCollector(ABC):
 
     def _insert_breakpoints(self, pid: int, modules: list[tuple[str, int]], word_cache: dict) -> dict:
         """Insert breakpoints for the basic blocks of ``modules``."""
-        blocks: list[tuple[str, int, int]] = []
+        blocks: list[tuple[str, int, int, int]] = []
         for path, mbase in modules:
+            try:
+                _, tbase = _load_text(path)
+            except Exception as e:
+                logging.debug("Failed reading text base from %s: %s", path, e)
+                tbase = 0
             for b in get_basic_blocks(path):
-                blocks.append((path, mbase, b))
+                blocks.append((path, mbase, tbase, b))
         breakpoints = {}
-        for path, mbase, off in blocks:
-            addr = mbase + off
+        for path, mbase, tbase, off in blocks:
+            addr = mbase + tbase + off
             try:
                 bp_info = self._set_breakpoint(pid, addr, word_cache)
-                breakpoints[addr] = (*bp_info, path, mbase)
+                breakpoints[addr] = (*bp_info, path, mbase + tbase)
                 logging.debug("Breakpoint inserted at %#x", addr)
             except OSError as e:
                 logging.debug("Failed to insert breakpoint at %#x: %s", addr, e)
@@ -403,7 +408,10 @@ class LinuxCollector(CoverageCollector):
         try:
             with open(exe, "rb") as f:
                 elf = ELFFile(f)
-                return elf.header["e_entry"]
+                entry = elf.header["e_entry"]
+                text = elf.get_section_by_name(".text")
+                base = text["sh_addr"] if text is not None else 0
+                return entry - base
         except Exception as e:
             logging.debug("Failed to read entry point from %s: %s", exe, e)
         return 0
@@ -418,9 +426,15 @@ class LinuxCollector(CoverageCollector):
         exe = self._resolve_exe(pid, None)
         base = self._get_image_base(pid, exe) if exe else 0
         entry_off = self._get_entry_offset(exe) if exe else 0
+        tbase = 0
+        if exe:
+            try:
+                _, tbase = _load_text(exe)
+            except Exception as e:
+                logging.debug("Failed reading text base from %s: %s", exe, e)
 
         if entry_off and base:
-            entry_addr = base + entry_off
+            entry_addr = base + tbase + entry_off
             try:
                 if ARCH in ("aarch64", "arm64"):
                     word_addr = entry_addr & ~7
