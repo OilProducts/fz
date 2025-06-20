@@ -42,8 +42,17 @@ def run_target(
     """
     coverage_set: Set[Edge] = set()
     exit_code: int | None = None
-    stdout_file = tempfile.TemporaryFile()
-    stderr_file = tempfile.TemporaryFile()
+    capture_output = output_bytes > 0
+    if capture_output:
+        stdout_file = tempfile.TemporaryFile()
+        stderr_file = tempfile.TemporaryFile()
+        stdout_param = stdout_file
+        stderr_param = stderr_file
+    else:
+        stdout_file = None
+        stderr_file = None
+        stdout_param = subprocess.DEVNULL
+        stderr_param = subprocess.DEVNULL
     filename = None
     proc = None
     if env is None:
@@ -73,8 +82,8 @@ def run_target(
         proc = subprocess.Popen(
             argv,
             stdin=stdin_pipe,
-            stdout=stdout_file,
-            stderr=stderr_file,
+            stdout=stdout_param,
+            stderr=stderr_param,
             preexec_fn=preexec,
             env=env,
         )
@@ -126,10 +135,14 @@ def run_target(
             proc.kill()
             timed_out = True
             logging.warning("Execution timed out")
-        stdout_file.seek(0)
-        stderr_file.seek(0)
-        stdout_data = stdout_file.read(output_bytes) if output_bytes else b""
-        stderr_data = stderr_file.read(output_bytes) if output_bytes else b""
+        if capture_output:
+            stdout_file.seek(0)
+            stderr_file.seek(0)
+            stdout_data = stdout_file.read(output_bytes)
+            stderr_data = stderr_file.read(output_bytes)
+        else:
+            stdout_data = b""
+            stderr_data = b""
     finally:
         if file_input and filename:
             try:
@@ -138,7 +151,8 @@ def run_target(
                 pass
         if proc and proc.poll() is None:
             proc.kill()
-        stdout_file.close()
-        stderr_file.close()
+        if capture_output:
+            stdout_file.close()
+            stderr_file.close()
 
     return coverage_set, crashed, timed_out, exit_code, stdout_data, stderr_data
