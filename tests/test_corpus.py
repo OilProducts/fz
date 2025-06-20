@@ -1,5 +1,6 @@
 import os
 from fz.corpus.corpus import Corpus
+from fz.corpus import decode_coverage
 
 
 def test_crash_saved_on_unique_coverage(tmp_path):
@@ -53,4 +54,13 @@ def test_load_existing_coverage(tmp_path):
     saved, path = corpus2.save_input(b"B", cov)
     assert not saved
     assert path is None
+
+
+def test_decode_coverage_helper():
+    cov_list = [[["mod", 1], ["mod", 2]], [["mod", 3], ["mod", 4]]]
+    edges = decode_coverage(cov_list)
+    assert edges == {
+        (("mod", 1), ("mod", 2)),
+        (("mod", 3), ("mod", 4)),
+    }
 

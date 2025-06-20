@@ -7,6 +7,8 @@ import tempfile
 import subprocess
 from typing import Optional
 
+from .utils import decode_coverage
+
 from fz.runner.target import run_target
 
 
@@ -37,15 +39,7 @@ class Corpus:
             try:
                 with open(path) as f:
                     record = json.load(f)
-                edges = set()
-                for c in record.get("coverage", []):
-                    if (
-                        isinstance(c, (list, tuple))
-                        and len(c) == 2
-                        and all(isinstance(x, (list, tuple)) and len(x) == 2 for x in c)
-                    ):
-                        edge = (tuple(c[0]), tuple(c[1]))
-                        edges.add(edge)
+                edges = decode_coverage(record.get("coverage", []))
             except Exception:
                 continue
             self.coverage.update(edges)
@@ -227,14 +221,7 @@ def corpus_stats(directory: str) -> tuple[int, int]:
         try:
             with open(path) as f:
                 record = json.load(f)
-            for c in record.get("coverage", []):
-                if (
-                    isinstance(c, (list, tuple))
-                    and len(c) == 2
-                    and all(isinstance(x, (list, tuple)) and len(x) == 2 for x in c)
-                ):
-                    edge = (tuple(c[0]), tuple(c[1]))
-                    edges.add(edge)
+            edges.update(decode_coverage(record.get("coverage", [])))
             entries += 1
         except Exception:
             continue
