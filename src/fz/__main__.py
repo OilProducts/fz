@@ -221,9 +221,9 @@ class Fuzzer:
                     if make_table is None:
                         return (
                             f"iters={iters} saved={saves} rate={rate:.2f}/sec "
-                            f"corpus={samples} edges={edges_str}"
+                            f"corpus={samples} edges={edges}"
                         )
-                    return make_table(iters, saves, rate, samples, edges_str)
+                    return make_table(iters, saves, rate, samples, edges)
 
                 if Live:
                     with Live(snapshot(), refresh_per_second=1) as live:
@@ -259,7 +259,15 @@ class Fuzzer:
 
             return
 
-        self._fuzz_loop(args)
+        stats = self._fuzz_loop(args)
+        from fz.corpus.corpus import corpus_stats
+        from fz.coverage import get_possible_edges
+
+        samples, covered = corpus_stats(args.corpus_dir)
+        total_edges = len(get_possible_edges(args.target))
+        logging.info("Corpus entries: %d (+%d new)", samples, stats.get("saved", 0))
+        edge_info = f"{covered}/{total_edges}" if total_edges else str(covered)
+        logging.info("Unique coverage edges: %s", edge_info)
 
 
 def _worker(args, iter_counter=None, saved_counter=None):
