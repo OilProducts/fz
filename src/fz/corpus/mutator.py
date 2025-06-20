@@ -25,6 +25,7 @@ class Mutator:
         self.max_mutations = max(1, int(max_mutations))
         self.cfg = cfg
         self.seeds: List[bytes] = []
+        self.non_empty_seeds: List[bytes] = []
         self.seed_edges: List[Iterable[tuple]] = []
         self.weights: List[int] = []
         self._load_corpus()
@@ -53,6 +54,8 @@ class Mutator:
                 coverage = list(decode_coverage(record.get("coverage", [])))
                 self.seeds.append(data)
                 self.seed_edges.append(coverage)
+                if data:
+                    self.non_empty_seeds.append(data)
             except Exception:
                 continue
         if not self.seeds:
@@ -75,7 +78,7 @@ class Mutator:
 
     def _splice(self, data: bytearray) -> bytearray:
         # Only splice with non-empty seeds to avoid zero-length ranges
-        candidates = [s for s in self.seeds if s]
+        candidates = self.non_empty_seeds
         if len(candidates) < 2:
             return self._bitflip(data)
         other = random.choice(candidates)
@@ -127,6 +130,8 @@ class Mutator:
         """Update seed pool based on the result of a fuzz iteration."""
         if interesting:
             self.seeds.append(data)
+            if data:
+                self.non_empty_seeds.append(data)
             self.seed_edges.append(list(coverage))
             self._update_weights()
 

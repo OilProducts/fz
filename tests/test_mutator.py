@@ -34,3 +34,21 @@ def test_weights_update_on_new_edges(tmp_path):
     m.record_result(b'C', new_cov, interesting=True)
 
     assert all(w == 1 for w in m.weights)
+
+
+def test_non_empty_seed_tracking(tmp_path):
+    corpus_dir = str(tmp_path)
+    corpus = Corpus(corpus_dir)
+
+    cov = {(('mod', 1), ('mod', 2))}
+    corpus.save_input(b'A', cov)
+
+    m = Mutator(corpus_dir=corpus_dir, input_size=8)
+
+    assert b"" in m.seeds
+    assert m.non_empty_seeds == [b"A"]
+
+    m.record_result(b"B", cov, interesting=True)
+    assert b"B" in m.non_empty_seeds
+    m.record_result(b"C", cov, interesting=False)
+    assert b"C" not in m.non_empty_seeds
