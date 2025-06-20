@@ -166,21 +166,18 @@ class Fuzzer:
         return stats
 
     def run(self, args):
+        possible_edges = get_possible_edges(args.target)
+        total_edges = len(possible_edges)
+
         if args.parallel > 1:
             import multiprocessing
             from fz.corpus.corpus import corpus_stats
-            from fz.coverage import get_possible_edges
-
-            possible_edges = get_possible_edges(args.target)
-            total_edges = len(possible_edges)
-
             ctx = multiprocessing.get_context()
             iter_counter = ctx.Value('i', 0)
             saved_counter = ctx.Value('i', 0)
 
             processes = []
             start_time = time.time()
-            total_edges = len(get_possible_edges(args.target))
 
             for _ in range(args.parallel):
                 p = ctx.Process(target=_worker, args=(args, iter_counter, saved_counter))
@@ -261,10 +258,9 @@ class Fuzzer:
 
         stats = self._fuzz_loop(args)
         from fz.corpus.corpus import corpus_stats
-        from fz.coverage import get_possible_edges
 
         samples, covered = corpus_stats(args.corpus_dir)
-        total_edges = len(get_possible_edges(args.target))
+        total_edges = len(possible_edges)
         logging.info("Corpus entries: %d (+%d new)", samples, stats.get("saved", 0))
         edge_info = f"{covered}/{total_edges}" if total_edges else str(covered)
         logging.info("Unique coverage edges: %s", edge_info)
