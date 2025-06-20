@@ -12,16 +12,16 @@ from fz.coverage.collector import (
     PTRACE_SETREGS,
 )
 from fz.coverage import collector as collector_module
-from fz.coverage.utils import get_basic_blocks
+from fz.coverage.utils import get_basic_blocks, _load_text
 from fz.arch import x86 as arch
 
 
-def _mock_environment(monkeypatch, blocks):
+def _mock_environment(monkeypatch, blocks, tbase):
     state = {"i": 0}
 
     def fake_ptrace(request, pid, addr=0, data=0):
         if request == PTRACE_GETREGS:
-            ctypes.cast(data, ctypes.POINTER(arch.user_regs_struct)).contents.rip = blocks[state["i"]] + 1
+            ctypes.cast(data, ctypes.POINTER(arch.user_regs_struct)).contents.rip = tbase + blocks[state["i"]] + 1
         elif request == PTRACE_SETREGS:
             state["i"] += 1
         return 0
@@ -45,6 +45,7 @@ def _mock_environment(monkeypatch, blocks):
 def test_linux_collector(monkeypatch, tiny_binary):
     exe = str(tiny_binary)
     blocks = get_basic_blocks(exe)
+    tbase = _load_text(exe)[1]
     collector = LinuxCollector()
 
     global events
@@ -56,7 +57,7 @@ def test_linux_collector(monkeypatch, tiny_binary):
         (1234, 0),
     ])
 
-    _mock_environment(monkeypatch, blocks)
+    _mock_environment(monkeypatch, blocks, tbase)
     monkeypatch.setattr(LinuxCollector, "_get_image_base", lambda self, pid, exe: 0)
 
     edges = collector.collect_coverage(1234, exe=exe, already_traced=True)
@@ -66,6 +67,7 @@ def test_linux_collector(monkeypatch, tiny_binary):
 def test_macos_collector(monkeypatch, tiny_binary):
     exe = str(tiny_binary)
     blocks = get_basic_blocks(exe)
+    tbase = _load_text(exe)[1]
     collector = MacOSCollector()
 
     global events
@@ -77,7 +79,7 @@ def test_macos_collector(monkeypatch, tiny_binary):
         (1234, 0),
     ])
 
-    _mock_environment(monkeypatch, blocks)
+    _mock_environment(monkeypatch, blocks, tbase)
     monkeypatch.setattr(MacOSCollector, "_get_image_base", lambda self, pid, exe: 0)
 
     edges = collector.collect_coverage(1234, exe=exe, already_traced=True)
@@ -90,6 +92,7 @@ def test_macos_collector(monkeypatch, tiny_binary):
 def test_collect_coverage_with_library(monkeypatch, tiny_binary):
     exe = str(tiny_binary)
     blocks = get_basic_blocks(exe)
+    tbase = _load_text(exe)[1]
     collector = LinuxCollector()
 
     global events
@@ -101,7 +104,7 @@ def test_collect_coverage_with_library(monkeypatch, tiny_binary):
         (1234, 0),
     ])
 
-    _mock_environment(monkeypatch, blocks)
+    _mock_environment(monkeypatch, blocks, tbase)
     monkeypatch.setattr(LinuxCollector, "_get_image_base", lambda self, pid, exe: 0)
 
     called = {}
