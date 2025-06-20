@@ -46,12 +46,12 @@ class Mutator:
             except Exception:
                 continue
         if not self.seeds:
-            # Ensure at least one seed exists to mutate
-            self.seeds.append(os.urandom(self.input_size))
+            # Use a null seed when no corpus inputs are present
+            self.seeds.append(b"")
             self.seed_edges.append([])
             self.weights.append(1)
-        # Always include an empty seed for minimal mutations
-        if b"" not in self.seeds:
+        elif b"" not in self.seeds:
+            # Always include an empty seed for minimal mutations
             self.seeds.append(b"")
             self.seed_edges.append([])
             self.weights.append(1)
