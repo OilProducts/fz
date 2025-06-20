@@ -2,7 +2,7 @@ import base64
 import json
 import os
 import random
-from typing import List, Set, Iterable
+from typing import Iterable, List, Set
 
 from fz.coverage.cfg import Edge
 
@@ -28,6 +28,17 @@ class Mutator:
         self.seed_edges: List[Iterable[tuple]] = []
         self.weights: List[int] = []
         self._load_corpus()
+        self._update_weights()
+
+    def _update_weights(self) -> None:
+        """Recalculate seed selection weights based on unseen edge counts."""
+        self.weights = []
+        for edges in self.seed_edges:
+            if self.cfg:
+                unseen = self.cfg.new_edge_count(edges)
+                self.weights.append(max(1, unseen))
+            else:
+                self.weights.append(max(1, len(edges)))
 
     def _load_corpus(self) -> None:
         """Load saved inputs from the corpus directory."""
@@ -42,28 +53,19 @@ class Mutator:
                 coverage = list(decode_coverage(record.get("coverage", [])))
                 self.seeds.append(data)
                 self.seed_edges.append(coverage)
-                self.weights.append(max(1, len(coverage)))
             except Exception:
                 continue
         if not self.seeds:
             # Use a null seed when no corpus inputs are present
             self.seeds.append(b"")
             self.seed_edges.append([])
-            self.weights.append(1)
         elif b"" not in self.seeds:
             # Always include an empty seed for minimal mutations
             self.seeds.append(b"")
             self.seed_edges.append([])
-            self.weights.append(1)
 
     # ---- mutation helpers ----
     def _choose_seed(self) -> bytes:
-        if self.cfg:
-            weights = []
-            for edges in self.seed_edges:
-                unseen = self.cfg.new_edge_count(edges)
-                weights.append(max(1, unseen))
-            return random.choices(self.seeds, weights=weights, k=1)[0]
         return random.choices(self.seeds, weights=self.weights, k=1)[0]
 
     def _bitflip(self, data: bytearray) -> bytearray:
@@ -126,5 +128,5 @@ class Mutator:
         if interesting:
             self.seeds.append(data)
             self.seed_edges.append(list(coverage))
-            self.weights.append(max(1, len(coverage)))
+            self._update_weights()
 
