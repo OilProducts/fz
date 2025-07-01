@@ -19,8 +19,10 @@ class Mutator:
         input_size: int = 256,
         max_mutations: int = 1,
         cfg: ControlFlowGraph | None = None,
+        seed_dir: str | None = None,
     ) -> None:
         self.corpus_dir = corpus_dir
+        self.seed_dir = seed_dir
         self.input_size = input_size
         self.max_mutations = max(1, int(max_mutations))
         self.cfg = cfg
@@ -29,6 +31,8 @@ class Mutator:
         self.seed_edges: List[Iterable[tuple]] = []
         self.weights: List[int] = []
         self._load_corpus()
+        self._load_seed_dir()
+        self._ensure_null_seed()
         self._update_weights()
 
     def _update_weights(self) -> None:
@@ -58,12 +62,32 @@ class Mutator:
                     self.non_empty_seeds.append(data)
             except Exception:
                 continue
+        return
+
+    def _load_seed_dir(self) -> None:
+        """Load raw seed files from ``self.seed_dir`` if provided."""
+        if not self.seed_dir or not os.path.isdir(self.seed_dir):
+            return
+        for name in os.listdir(self.seed_dir):
+            path = os.path.join(self.seed_dir, name)
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+                self.seeds.append(data)
+                self.seed_edges.append([])
+                if data:
+                    self.non_empty_seeds.append(data)
+            except Exception:
+                continue
+
+    def _ensure_null_seed(self) -> None:
+        """Ensure there is always an empty seed available."""
         if not self.seeds:
-            # Use a null seed when no corpus inputs are present
             self.seeds.append(b"")
             self.seed_edges.append([])
         elif b"" not in self.seeds:
-            # Always include an empty seed for minimal mutations
             self.seeds.append(b"")
             self.seed_edges.append([])
 

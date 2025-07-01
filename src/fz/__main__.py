@@ -115,7 +115,13 @@ class Fuzzer:
         i = 0
         saved = 0
         from fz.corpus.mutator import Mutator
-        mutator = Mutator(args.corpus_dir, args.input_size, args.mutations, cfg=self.cfg)
+        mutator = Mutator(
+            args.corpus_dir,
+            args.input_size,
+            args.mutations,
+            cfg=self.cfg,
+            seed_dir=args.seed_dir,
+        )
         try:
             while True:
                 data = mutator.next_input()
@@ -375,6 +381,10 @@ def parse_args():
         "--corpus-dir",
         default="corpus",
         help="Directory to store interesting test cases",
+    )
+    parser.add_argument(
+        "--seed-dir",
+        help="Directory of initial seed files",
     )
     parser.add_argument(
         "--minimize",
