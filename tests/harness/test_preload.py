@@ -37,7 +37,7 @@ def test_preload_harness(tmp_path):
     cov, crashed, to, rc, out, err = harness.run(str(target), b"ping", 1.0, output_bytes=10)
     assert not to
     assert isinstance(rc, int)
-    assert isinstance(cov, set)
+    assert isinstance(cov, dict)
     cov, crashed, to, rc, out, err = harness.run(str(target), b"OVERFLOW:AAAAAAAA", 1.0)
     assert not crashed
     assert rc == 0

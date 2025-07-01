@@ -116,7 +116,7 @@ class QemuGdbCollector(CoverageCollector):
         exe: Optional[str] = None,
         already_traced: bool = False,
         libs: Optional[list[str]] = None,
-    ) -> Set[Edge]:
+    ) -> dict[Edge, int]:
         if exe is None:
             raise RuntimeError("Executable path required")
         gdb = GDBRemote(self.host, self.port)
@@ -134,7 +134,7 @@ class QemuGdbCollector(CoverageCollector):
                 logging.debug("Failed to set breakpoint at %#x: %s", addr, e)
         gdb.continue_()
         end_time = time.time() + timeout * 2
-        coverage: Set[Edge] = set()
+        coverage: dict[Edge, int] = {}
         prev = None
         while time.time() < end_time:
             reason = gdb._recv_packet()
@@ -152,7 +152,8 @@ class QemuGdbCollector(CoverageCollector):
                 break
             curr = (exe, addr - base)
             if prev is not None:
-                coverage.add((prev, curr))
+                edge = (prev, curr)
+                coverage[edge] = coverage.get(edge, 0) + 1
             prev = curr
             orig = breakpoints[addr]
             gdb.write_memory(addr, orig)

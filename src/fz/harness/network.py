@@ -41,7 +41,7 @@ class NetworkHarness:
         Returns
         -------
         tuple
-            ``(coverage_set, crashed, timed_out, exit_code, stdout, stderr)``
+            ``(coverage_map, crashed, timed_out, exit_code, stdout, stderr)``
         """
         logging.debug("Launching network target: %s", target)
         stdout_file = tempfile.TemporaryFile()

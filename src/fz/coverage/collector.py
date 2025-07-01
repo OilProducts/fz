@@ -165,9 +165,9 @@ class CoverageCollector(ABC):
         breakpoints: dict,
         word_cache: dict,
         timeout: float,
-    ) -> Set[Edge]:
-        """Run the tracing loop until timeout and return collected edges."""
-        coverage: Set[Edge] = set()
+    ) -> dict[Edge, int]:
+        """Run the tracing loop until timeout and return collected edges with counts."""
+        coverage: dict[Edge, int] = {}
         prev_addr: Optional[tuple[str, int]] = None
         regs = user_regs_struct()
         _ptrace(PTRACE_CONT, pid)
@@ -194,7 +194,8 @@ class CoverageCollector(ABC):
                     info = breakpoints.pop(addr)
                     curr = self._handle_breakpoint_hit(pid, addr, info, word_cache, regs)
                     if prev_addr is not None:
-                        coverage.add((prev_addr, curr))
+                        edge = (prev_addr, curr)
+                        coverage[edge] = coverage.get(edge, 0) + 1
                     prev_addr = curr
             _ptrace(PTRACE_CONT, pid)
         return coverage
@@ -225,7 +226,7 @@ class CoverageCollector(ABC):
         exe: Optional[str] = None,
         already_traced: bool = False,
         libs: Optional[list[str]] = None,
-    ) -> Set[Edge]:
+    ) -> dict[Edge, int]:
         """Collect basic block transition coverage from a traced process.
 
         Parameters
@@ -242,12 +243,12 @@ class CoverageCollector(ABC):
 
         Returns
         -------
-        set[Edge]
-            The set of executed basic block transitions as
-            ``((module, src), (module, dst))`` pairs.
+        dict[Edge, int]
+            Mapping of executed edges to how many times each transition
+            occurred.
         """
         logging.debug("Collecting coverage for pid %d", pid)
-        coverage: Set[Edge] = set()
+        coverage: dict[Edge, int] = {}
         word_cache = {}
 
         exe = self._resolve_exe(pid, exe)

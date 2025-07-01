@@ -1,9 +1,10 @@
 import os
-from typing import Dict, Iterable, Set, Tuple
+from typing import Dict, Iterable, Set, Tuple, Mapping
 
 
 Address = Tuple[str, int]
 Edge = Tuple[Address, Address]
+EdgeCoverage = Dict[Edge, int]
 
 
 class ControlFlowGraph:
@@ -18,19 +19,23 @@ class ControlFlowGraph:
         # edges discovered via static analysis
         self.possible_edges: Set[Edge] = set()
 
-    def add_edges(self, edges: Iterable[Edge]) -> None:
-        """Add executed edges to the graph and increment their counters.
+    def add_edges(self, edges: Iterable[Edge] | Mapping[Edge, int]) -> None:
+        """Add executed edges and increment their counters.
 
         Parameters
         ----------
         edges:
-            Iterable of ``(src, dst)`` edges that were observed during
-            execution.
+            Either an iterable of ``(src, dst)`` edges or a mapping of
+            edges to execution counts.
         """
-        for src, dst in edges:
+        if isinstance(edges, Mapping):
+            items = edges.items()
+        else:
+            items = ((e, 1) for e in edges)
+        for (src, dst), count in items:
             self.adj.setdefault(src, set()).add(dst)
             key = (src, dst)
-            self.edge_counts[key] = self.edge_counts.get(key, 0) + 1
+            self.edge_counts[key] = self.edge_counts.get(key, 0) + count
 
     def add_possible_edges(self, edges: Iterable[Edge]) -> None:
         """Record statically discovered edges without incrementing counts.
