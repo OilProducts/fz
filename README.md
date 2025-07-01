@@ -175,12 +175,14 @@ enabled.
 Provide `--seed-dir` to load an initial set of files as seeds.
 
 Each saved input is keyed by a hash of the coverage it produced. Samples are
-written as JSON files containing the executed basic block transitions, the input bytes
-(base64 encoded), and optionally the first N bytes of stdout/stderr from the
-target. Use `--output-bytes` to set how much output to store. Because filenames
-are derived from the coverage hash,
-parallel fuzzing only keeps the first input for a given coverage set,
-preventing duplicate samples that exercise the same code paths.
+written as JSON files containing the executed basic block transitions, the input
+bytes (base64 encoded), and optionally the first N bytes of stdout/stderr from
+the target. Use `--output-bytes` to set how much output to store. Saved files are
+organized by why the input was kept. The corpus directory contains subfolders
+such as `crash`, `timeout`, and `interesting`, each storing files named only
+with the coverage hash. Because filenames are derived from the hash, parallel
+fuzzing only keeps the first input for a given coverage set, preventing
+duplicate samples that exercise the same code paths.
 
 ```bash
 python3 -m fz --target /path/to/binary --iterations 100 --corpus-dir ./out

@@ -32,18 +32,19 @@ class Corpus:
         """Populate coverage sets from the existing corpus."""
         if not os.path.isdir(self.directory):
             return
-        for name in os.listdir(self.directory):
-            if not name.endswith(".json"):
-                continue
-            path = os.path.join(self.directory, name)
-            try:
-                with open(path) as f:
-                    record = json.load(f)
-                edges = decode_coverage(record.get("coverage", []))
-            except Exception:
-                continue
-            self.coverage.update(edges)
-            self.coverage_hashes.add(self._coverage_hash(edges))
+        for root, _, files in os.walk(self.directory):
+            for name in files:
+                if not name.endswith(".json"):
+                    continue
+                path = os.path.join(root, name)
+                try:
+                    with open(path) as f:
+                        record = json.load(f)
+                    edges = decode_coverage(record.get("coverage", []))
+                except Exception:
+                    continue
+                self.coverage.update(edges)
+                self.coverage_hashes.add(self._coverage_hash(edges))
 
     def save_input(
         self,
@@ -77,12 +78,16 @@ class Corpus:
         hash_input = ",".join(str(c) for c in record["coverage"]).encode()
         cov_hash = hashlib.sha1(hash_input).hexdigest()
         filename = cov_hash
-        path = os.path.join(self.directory, f"{category}-{filename}.json")
+        category_dir = os.path.join(self.directory, category)
+        os.makedirs(category_dir, exist_ok=True)
+        path = os.path.join(category_dir, f"{filename}.json")
 
         existing = [
-            os.path.join(self.directory, f"interesting-{cov_hash}.json"),
-            os.path.join(self.directory, f"crash-{cov_hash}.json"),
-            os.path.join(self.directory, f"timeout-{cov_hash}.json"),
+            os.path.join(self.directory, sub, f"{cov_hash}.json")
+            for sub in ("interesting", "crash", "timeout")
+        ] + [
+            os.path.join(self.directory, f"{sub}-{cov_hash}.json")
+            for sub in ("interesting", "crash", "timeout")
         ]
 
         if cov_hash in self.coverage_hashes or any(os.path.exists(p) for p in existing):
