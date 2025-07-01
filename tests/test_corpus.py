@@ -4,6 +4,12 @@ from fz.corpus.corpus import Corpus
 from fz.corpus import decode_coverage
 
 
+def test_output_dirs_created(tmp_path):
+    Corpus(str(tmp_path))
+    for name in ("interesting", "crash", "timeout"):
+        assert (tmp_path / name).is_dir()
+
+
 def test_crash_saved_on_unique_coverage(tmp_path):
     corpus = Corpus(str(tmp_path))
     cov1 = {(('mod', 1), ('mod', 2))}

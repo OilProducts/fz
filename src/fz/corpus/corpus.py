@@ -18,6 +18,8 @@ class Corpus:
     def __init__(self, directory: str = "corpus", output_bytes: int = 0):
         self.directory = directory
         os.makedirs(directory, exist_ok=True)
+        for sub in ("interesting", "crash", "timeout"):
+            os.makedirs(os.path.join(directory, sub), exist_ok=True)
         self.coverage = set()
         self.coverage_hashes = set()
         self.output_bytes = output_bytes
@@ -79,7 +81,6 @@ class Corpus:
         cov_hash = hashlib.sha1(hash_input).hexdigest()
         filename = cov_hash
         category_dir = os.path.join(self.directory, category)
-        os.makedirs(category_dir, exist_ok=True)
         path = os.path.join(category_dir, f"{filename}.json")
 
         existing = [
