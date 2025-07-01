@@ -86,7 +86,7 @@ This phase builds the foundational framework for targeting and monitoring applic
 
   - [ ] Libc Variants: Start with statically compiled binaries, then expand to handle dynamically linked targets using glibc, uclibc, and musl.
 
-  - [x] Emulation: Basic qemu-user integration via a GDB-based collector enables cross-architecture fuzzing.
+  - [x] Emulation: Automatic architecture detection launches the appropriate qemu-user when needed for cross-architecture fuzzing.
 
 - Execution Model
 
@@ -160,11 +160,9 @@ To run multiple fuzzing processes concurrently, use `--parallel`:
 python3 -m fz --target /path/to/binary --iterations 100 --parallel 4
 ```
 
-To fuzz a binary for another architecture using `qemu-user`, provide the emulator path with `--qemu-user` and specify the architecture:
-
-```bash
-python3 -m fz --target ./target_arm64 --qemu-user qemu-aarch64 --arch arm64
-```
+To fuzz a binary built for a different architecture, simply point `--target` at
+the cross-compiled binary. If a matching `qemu-user` emulator is installed it
+will be invoked automatically.
 
 Coverage is gathered automatically using `ptrace`. The addresses recorded are
 normalized to the binary's load base so identical inputs yield identical

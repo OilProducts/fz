@@ -12,14 +12,9 @@ For each example target located in a subdirectory (e.g., `examples/<target_name>
 This script will compile the target program and then run the main fuzzer against it. Specific parameters like input size are configured within each `fuzz.sh` script.
 
 Each Makefile now builds both the native binary and an `*_arm64` version using
-`aarch64-linux-gnu-gcc`. The extra binary allows cross-architecture fuzzing via
-`qemu-user`.
-
-To run an ARM64 example under emulation use the new `--qemu-user` option:
-
-```bash
-python3 ../../fz --target ./target1_arm64 --qemu-user qemu-aarch64 --arch arm64
-```
+`aarch64-linux-gnu-gcc`. When the fuzzer detects that the target binary is for a
+different architecture, it automatically searches for the matching
+`qemu-user` emulator and runs the program under emulation if available.
 
 ---
 
