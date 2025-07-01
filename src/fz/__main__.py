@@ -64,7 +64,7 @@ class Fuzzer:
 
         saved, path = self.corpus.save_input(
             data,
-            set(coverage_set.keys()),
+            coverage_set,
             category,
             stdout_data,
             stderr_data,

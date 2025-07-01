@@ -58,9 +58,9 @@ class Mutator:
                     with open(path, "r") as f:
                         record = json.load(f)
                     data = base64.b64decode(record.get("data", ""))
-                    coverage = list(decode_coverage(record.get("coverage", [])))
+                    coverage_map = decode_coverage(record.get("coverage", []))
                     self.seeds.append(data)
-                    self.seed_edges.append(coverage)
+                    self.seed_edges.append(list(coverage_map.keys()))
                     if data:
                         self.non_empty_seeds.append(data)
                 except Exception:

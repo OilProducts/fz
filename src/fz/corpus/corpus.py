@@ -26,8 +26,9 @@ class Corpus:
         self._load_existing()
 
     def _coverage_hash(self, coverage) -> str:
-        """Return a stable hash for *coverage*."""
-        hash_input = ",".join(str(c) for c in sorted(coverage)).encode()
+        """Return a stable hash for *coverage* including counts."""
+        items = sorted((str(edge), count) for edge, count in coverage.items())
+        hash_input = ",".join(f"{e}:{c}" for e, c in items).encode()
         return hashlib.sha1(hash_input).hexdigest()
 
     def _load_existing(self) -> None:
@@ -45,7 +46,7 @@ class Corpus:
                     edges = decode_coverage(record.get("coverage", []))
                 except Exception:
                     continue
-                self.coverage.update(edges)
+                self.coverage.update(edges.keys())
                 self.coverage_hashes.add(self._coverage_hash(edges))
 
     def save_input(
@@ -65,7 +66,10 @@ class Corpus:
         """
 
         record = {
-            "coverage": sorted(coverage),
+            "coverage": [
+                [list(src), list(dst), count]
+                for (src, dst), count in sorted(coverage.items())
+            ],
             "data": base64.b64encode(data).decode("ascii"),
         }
         if exit_code is not None:
@@ -77,8 +81,7 @@ class Corpus:
         if category != "interesting":
             record["type"] = category
 
-        hash_input = ",".join(str(c) for c in record["coverage"]).encode()
-        cov_hash = hashlib.sha1(hash_input).hexdigest()
+        cov_hash = self._coverage_hash(coverage)
         filename = cov_hash
         category_dir = os.path.join(self.directory, category)
         path = os.path.join(category_dir, f"{filename}.json")
@@ -93,10 +96,10 @@ class Corpus:
 
         if cov_hash in self.coverage_hashes or any(os.path.exists(p) for p in existing):
             logging.debug("Input with identical coverage already stored")
-            self.coverage.update(coverage)
+            self.coverage.update(coverage.keys())
             return False, None
 
-        self.coverage.update(coverage)
+        self.coverage.update(coverage.keys())
         self.coverage_hashes.add(cov_hash)
 
         with open(path, "w") as f:
@@ -227,7 +230,7 @@ def corpus_stats(directory: str) -> tuple[int, int]:
         try:
             with open(path) as f:
                 record = json.load(f)
-            edges.update(decode_coverage(record.get("coverage", [])))
+            edges.update(decode_coverage(record.get("coverage", [])).keys())
             entries += 1
         except Exception:
             continue
