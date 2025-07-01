@@ -15,8 +15,11 @@ def test_weights_update_on_new_edges(tmp_path):
     corpus_dir = str(tmp_path)
     corpus = Corpus(corpus_dir)
 
-    cov1 = {(('mod', 1), ('mod', 2)), (('mod', 2), ('mod', 3))}
-    cov2 = {(('mod', 3), ('mod', 4))}
+    cov1 = {
+        (("mod", 1), ("mod", 2)): 1,
+        (("mod", 2), ("mod", 3)): 1,
+    }
+    cov2 = {(("mod", 3), ("mod", 4)): 1}
 
     corpus.save_input(b'A', cov1)
     corpus.save_input(b'B', cov2)
@@ -26,10 +29,10 @@ def test_weights_update_on_new_edges(tmp_path):
     assert sorted(m.weights) == [1, 1, 2]
 
     cfg.add_edges(cov1)
-    m.record_result(b'A', cov1, interesting=False)
+    m.record_result(b'A', set(cov1.keys()), interesting=False)
     assert sorted(m.weights) == [1, 1, 2]
 
-    new_cov = {(('mod', 4), ('mod', 5))}
+    new_cov = {(("mod", 4), ("mod", 5))}
     cfg.add_edges(new_cov)
     m.record_result(b'C', new_cov, interesting=True)
 
@@ -40,7 +43,7 @@ def test_non_empty_seed_tracking(tmp_path):
     corpus_dir = str(tmp_path)
     corpus = Corpus(corpus_dir)
 
-    cov = {(('mod', 1), ('mod', 2))}
+    cov = {(("mod", 1), ("mod", 2)): 1}
     corpus.save_input(b'A', cov)
 
     m = Mutator(corpus_dir=corpus_dir, input_size=8)
@@ -48,9 +51,9 @@ def test_non_empty_seed_tracking(tmp_path):
     assert b"" in m.seeds
     assert m.non_empty_seeds == [b"A"]
 
-    m.record_result(b"B", cov, interesting=True)
+    m.record_result(b"B", set(cov.keys()), interesting=True)
     assert b"B" in m.non_empty_seeds
-    m.record_result(b"C", cov, interesting=False)
+    m.record_result(b"C", set(cov.keys()), interesting=False)
     assert b"C" not in m.non_empty_seeds
 
 

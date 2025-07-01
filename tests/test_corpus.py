@@ -12,7 +12,7 @@ def test_output_dirs_created(tmp_path):
 
 def test_crash_saved_on_unique_coverage(tmp_path):
     corpus = Corpus(str(tmp_path))
-    cov1 = {(('mod', 1), ('mod', 2))}
+    cov1 = {(("mod", 1), ("mod", 2)): 1}
     saved, path = corpus.save_input(b"A", cov1, "crash")
     assert saved
     assert os.path.exists(path)
@@ -27,26 +27,35 @@ def test_crash_saved_on_unique_coverage(tmp_path):
     assert path is None
     assert len(list(crash_dir.iterdir())) == 1
 
-    # New combination introduces an additional edge
-    cov2 = {(('mod', 1), ('mod', 2)), (('mod', 3), ('mod', 4))}
-    saved, path = corpus.save_input(b"C", cov2, "crash")
+    # Same edges with different counts should be unique
+    cov1_more = {(("mod", 1), ("mod", 2)): 2}
+    saved, path = corpus.save_input(b"B2", cov1_more, "crash")
     assert saved
-    assert os.path.exists(path)
-    assert crash_dir in Path(path).parents
     assert len(list(crash_dir.iterdir())) == 2
 
-    # Unique set composed of previously seen edges should also be saved
-    cov3 = {(('mod', 3), ('mod', 4))}
-    saved, path = corpus.save_input(b"D", cov3, "crash")
+    # New combination introduces an additional edge
+    cov2 = {
+        (("mod", 1), ("mod", 2)): 1,
+        (("mod", 3), ("mod", 4)): 1,
+    }
+    saved, path = corpus.save_input(b"C", cov2, "crash")
     assert saved
     assert os.path.exists(path)
     assert crash_dir in Path(path).parents
     assert len(list(crash_dir.iterdir())) == 3
 
+    # Unique set composed of previously seen edges should also be saved
+    cov3 = {(("mod", 3), ("mod", 4)): 1}
+    saved, path = corpus.save_input(b"D", cov3, "crash")
+    assert saved
+    assert os.path.exists(path)
+    assert crash_dir in Path(path).parents
+    assert len(list(crash_dir.iterdir())) == 4
+
 
 def test_interesting_prefix(tmp_path):
     corpus = Corpus(str(tmp_path))
-    cov = {(('mod', 1), ('mod', 2))}
+    cov = {(("mod", 1), ("mod", 2)): 1}
     saved, path = corpus.save_input(b"A", cov, "interesting")
     assert saved
     assert Path(tmp_path) / "interesting" in Path(path).parents
@@ -54,7 +63,7 @@ def test_interesting_prefix(tmp_path):
 
 def test_load_existing_coverage(tmp_path):
     corpus = Corpus(str(tmp_path))
-    cov = {(('mod', 1), ('mod', 2))}
+    cov = {(("mod", 1), ("mod", 2)): 1}
     saved, path = corpus.save_input(b"A", cov)
     assert saved
 
@@ -66,10 +75,13 @@ def test_load_existing_coverage(tmp_path):
 
 
 def test_decode_coverage_helper():
-    cov_list = [[["mod", 1], ["mod", 2]], [["mod", 3], ["mod", 4]]]
+    cov_list = [
+        [["mod", 1], ["mod", 2], 2],
+        [["mod", 3], ["mod", 4], 1],
+    ]
     edges = decode_coverage(cov_list)
     assert edges == {
-        (("mod", 1), ("mod", 2)),
-        (("mod", 3), ("mod", 4)),
+        (("mod", 1), ("mod", 2)): 2,
+        (("mod", 3), ("mod", 4)): 1,
     }
 
