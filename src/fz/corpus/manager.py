@@ -18,9 +18,10 @@ def _iter_samples(directory: str) -> Iterable[str]:
     """Yield full paths to JSON corpus entries in *directory*."""
     if not os.path.isdir(directory):
         return []
-    for name in sorted(os.listdir(directory)):
-        if name.endswith('.json'):
-            yield os.path.join(directory, name)
+    for root, _, files in os.walk(directory):
+        for name in sorted(files):
+            if name.endswith('.json'):
+                yield os.path.join(root, name)
 
 
 def _decode_field(value: str) -> str:
@@ -49,7 +50,8 @@ def _analyze(args) -> None:
 
 
 def _add(args) -> None:
-    os.makedirs(args.corpus_dir, exist_ok=True)
+    manual_dir = os.path.join(args.corpus_dir, "manual")
+    os.makedirs(manual_dir, exist_ok=True)
     with open(args.file, "rb") as f:
         data = f.read()
     record = {
@@ -57,8 +59,8 @@ def _add(args) -> None:
         "coverage": [],
         "type": "manual",
     }
-    name = f"manual-{int(time.time() * 1000)}.json"
-    path = os.path.join(args.corpus_dir, name)
+    name = f"{int(time.time() * 1000)}.json"
+    path = os.path.join(manual_dir, name)
     with open(path, "w") as f:
         json.dump(record, f)
     print(path)

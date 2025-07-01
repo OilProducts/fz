@@ -49,19 +49,22 @@ class Mutator:
         """Load saved inputs from the corpus directory."""
         if not os.path.isdir(self.corpus_dir):
             return
-        for name in os.listdir(self.corpus_dir):
-            path = os.path.join(self.corpus_dir, name)
-            try:
-                with open(path, "r") as f:
-                    record = json.load(f)
-                data = base64.b64decode(record.get("data", ""))
-                coverage = list(decode_coverage(record.get("coverage", [])))
-                self.seeds.append(data)
-                self.seed_edges.append(coverage)
-                if data:
-                    self.non_empty_seeds.append(data)
-            except Exception:
-                continue
+        for root, _, files in os.walk(self.corpus_dir):
+            for name in files:
+                path = os.path.join(root, name)
+                if not path.endswith(".json"):
+                    continue
+                try:
+                    with open(path, "r") as f:
+                        record = json.load(f)
+                    data = base64.b64decode(record.get("data", ""))
+                    coverage = list(decode_coverage(record.get("coverage", [])))
+                    self.seeds.append(data)
+                    self.seed_edges.append(coverage)
+                    if data:
+                        self.non_empty_seeds.append(data)
+                except Exception:
+                    continue
         return
 
     def _load_seed_dir(self) -> None:
