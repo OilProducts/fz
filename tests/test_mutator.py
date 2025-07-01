@@ -52,3 +52,18 @@ def test_non_empty_seed_tracking(tmp_path):
     assert b"B" in m.non_empty_seeds
     m.record_result(b"C", cov, interesting=False)
     assert b"C" not in m.non_empty_seeds
+
+
+def test_seed_directory_inputs(tmp_path):
+    corpus_dir = tmp_path / "corpus"
+    seed_dir = tmp_path / "seeds"
+    corpus_dir.mkdir()
+    seed_dir.mkdir()
+    (seed_dir / "one").write_bytes(b"A")
+    (seed_dir / "two").write_bytes(b"BB")
+
+    m = Mutator(corpus_dir=str(corpus_dir), input_size=8, seed_dir=str(seed_dir))
+
+    assert b"A" in m.seeds
+    assert b"BB" in m.seeds
+    assert b"" in m.seeds

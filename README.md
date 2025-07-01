@@ -27,6 +27,12 @@ Write input to a file:
 fz --target /path/to/binary --file-input --iterations 100
 ```
 
+Provide initial seeds from a directory:
+
+```bash
+fz --target /path/to/binary --seed-dir ./seeds
+```
+
 Fuzz a network service:
 
 ```bash
@@ -166,6 +172,7 @@ coverage sets across runs. Inputs that execute a unique set of basic block trans
 the corpus directory. Use `--corpus-dir` to change
 where these inputs are saved. Basic block transition coverage via breakpoints is always
 enabled.
+Provide `--seed-dir` to load an initial set of files as seeds.
 
 Each saved input is keyed by a hash of the coverage it produced. Samples are
 written as JSON files containing the executed basic block transitions, the input bytes
