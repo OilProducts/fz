@@ -33,7 +33,7 @@ class Fuzzer:
 
     def _run_once(self, target, data, timeout, file_input=False, network=None, libs=None, qemu_user=None, gdb_port=1234, arch=None):
         """Execute target once and record coverage."""
-        coverage_set = set()
+        coverage_set = {}
         if network:
             coverage_set, crashed, timed_out, exit_code, stdout_data, stderr_data = network.run(
                 target, data, timeout, self.corpus.output_bytes, libs=libs
@@ -66,7 +66,7 @@ class Fuzzer:
 
         saved, path = self.corpus.save_input(
             data,
-            coverage_set,
+            set(coverage_set.keys()),
             category,
             stdout_data,
             stderr_data,
@@ -137,7 +137,7 @@ class Fuzzer:
                     gdb_port=args.gdb_port,
                     arch=args.arch,
                 )
-                mutator.record_result(data, coverage_set, interesting)
+                mutator.record_result(data, set(coverage_set.keys()), interesting)
                 if interesting:
                     saved += 1
                     if saved_counter is not None:

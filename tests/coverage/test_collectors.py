@@ -61,7 +61,7 @@ def test_linux_collector(monkeypatch, tiny_binary):
     monkeypatch.setattr(LinuxCollector, "_get_image_base", lambda self, pid, exe: 0)
 
     edges = collector.collect_coverage(1234, exe=exe, already_traced=True)
-    assert edges == {((exe, blocks[0]), (exe, blocks[1]))}
+    assert edges == {((exe, blocks[0]), (exe, blocks[1])): 1}
 
 
 def test_macos_collector(monkeypatch, tiny_binary):
@@ -83,7 +83,7 @@ def test_macos_collector(monkeypatch, tiny_binary):
     monkeypatch.setattr(MacOSCollector, "_get_image_base", lambda self, pid, exe: 0)
 
     edges = collector.collect_coverage(1234, exe=exe, already_traced=True)
-    assert edges == {((exe, blocks[0]), (exe, blocks[1]))}
+    assert edges == {((exe, blocks[0]), (exe, blocks[1])): 1}
 
     with pytest.raises(RuntimeError):
         collector.collect_coverage(1234, exe=None, already_traced=True)
@@ -117,7 +117,7 @@ def test_collect_coverage_with_library(monkeypatch, tiny_binary):
 
     edges = collector.collect_coverage(1234, exe=exe, libs=["libmagic.so"], already_traced=True)
     assert called["name"] == "libmagic.so"
-    assert edges == {((exe, blocks[0]), (exe, blocks[1]))}
+    assert edges == {((exe, blocks[0]), (exe, blocks[1])): 1}
 
 
 def test_find_library_symlink(monkeypatch):

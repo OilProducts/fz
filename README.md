@@ -174,6 +174,13 @@ where these inputs are saved. Basic block transition coverage via breakpoints is
 enabled.
 Provide `--seed-dir` to load an initial set of files as seeds.
 
+Coverage data now records how many times each edge is executed. The
+tracing loop increments a counter for every observed transition between
+basic blocks. Tracking counts per edge provides more context than basic
+block counts and still allows computing block execution frequency by
+summing the counts of outgoing edges. Per-edge counting keeps the data
+structure small while retaining useful precision.
+
 Each saved input is keyed by a hash of the coverage it produced. Samples are
 written as JSON files containing the executed basic block transitions, the input
 bytes (base64 encoded), and optionally the first N bytes of stdout/stderr from

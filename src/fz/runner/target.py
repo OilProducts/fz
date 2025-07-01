@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from typing import Set, Tuple, Optional
 
-from fz.coverage.cfg import Edge
+from fz.coverage.cfg import Edge, EdgeCoverage
 
 from fz import coverage
 
@@ -26,7 +26,7 @@ def run_target(
     arch: Optional[str] = None,
     env: Optional[dict[str, str]] = None,
 ) -> Tuple[
-    Set[Edge],
+    EdgeCoverage,
     bool,
     bool,
     int | None,
@@ -37,10 +37,10 @@ def run_target(
 
     Returns
     -------
-    Set[Edge], bool, bool, int | None, bytes, bytes
-        ``(coverage_set, crashed, timed_out, exit_code, stdout, stderr)``
+    EdgeCoverage, bool, bool, int | None, bytes, bytes
+        ``(coverage_map, crashed, timed_out, exit_code, stdout, stderr)``
     """
-    coverage_set: Set[Edge] = set()
+    coverage_set: EdgeCoverage = {}
     exit_code: int | None = None
     capture_output = output_bytes > 0
     if capture_output:
@@ -118,12 +118,12 @@ def run_target(
             logging.debug(
                 "Process %d exited before coverage collection", proc.pid
             )
-            coverage_set = set()
+            coverage_set = {}
         except OSError as e:
             logging.debug(
                 "Failed to collect coverage from pid %d: %s", proc.pid, e
             )
-            coverage_set = set()
+            coverage_set = {}
 
         crashed = False
         timed_out = False

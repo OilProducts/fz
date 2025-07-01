@@ -9,7 +9,7 @@ import platform
 
 from .collector import CoverageCollector, LinuxCollector, MacOSCollector
 from .gdb_collector import QemuGdbCollector
-from .cfg import ControlFlowGraph
+from .cfg import ControlFlowGraph, EdgeCoverage
 from .utils import get_possible_edges
 from .visualize import main as visualize_cfg
 
@@ -29,6 +29,7 @@ __all__ = [
     "CoverageCollector",
     "get_collector",
     "ControlFlowGraph",
+    "EdgeCoverage",
     "get_possible_edges",
     "visualize_cfg",
     "QemuGdbCollector",
