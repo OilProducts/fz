@@ -2,6 +2,8 @@ import ctypes
 import ctypes.util
 import logging
 import os
+import platform
+import shutil
 import subprocess
 import tempfile
 from typing import Set, Tuple, Optional
@@ -13,6 +15,65 @@ from fz import coverage
 libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
 PTRACE_TRACEME = 0
 
+_MACHO_MAGICS = {
+    b"\xfe\xed\xfa\xce",
+    b"\xce\xfa\xed\xfe",
+    b"\xfe\xed\xfa\xcf",
+    b"\xcf\xfa\xed\xfe",
+    b"\xca\xfe\xba\xbe",
+    b"\xbe\xba\xfe\xca",
+    b"\xca\xfe\xba\xbf",
+    b"\xbf\xba\xfe\xca",
+}
+
+
+def _detect_arch(path: str) -> str:
+    """Return the architecture for ``path`` as a normalized string."""
+    with open(path, "rb") as f:
+        magic = f.read(4)
+    if magic == b"\x7fELF":
+        from elftools.elf.elffile import ELFFile
+
+        with open(path, "rb") as f:
+            elf = ELFFile(f)
+            mach = elf.header["e_machine"]
+        arch_map = {
+            "EM_X86_64": "x86_64",
+            "EM_386": "i386",
+            "EM_AARCH64": "arm64",
+            "EM_ARM": "arm",
+        }
+        return arch_map.get(mach, mach.lower())
+    if magic in _MACHO_MAGICS:
+        from macholib.MachO import MachO
+        from macholib.mach_o import CPU_TYPE_NAMES
+
+        m = MachO(path)
+        if m.headers:
+            cpu = m.headers[0].header.cputype
+            name = CPU_TYPE_NAMES.get(cpu, "").lower()
+            if name:
+                return name
+    return platform.machine().lower()
+
+
+def _find_qemu_user(arch: str) -> Optional[str]:
+    """Return the path to qemu-user for ``arch`` if available."""
+    candidates = {
+        "x86_64": ["qemu-x86_64"],
+        "amd64": ["qemu-x86_64"],
+        "i386": ["qemu-i386"],
+        "arm": ["qemu-arm"],
+        "arm64": ["qemu-aarch64"],
+        "aarch64": ["qemu-aarch64"],
+    }.get(arch, [f"qemu-{arch}"])
+
+    for name in candidates:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
 
 def run_target(
     target: str,
@@ -21,9 +82,7 @@ def run_target(
     file_input: bool = False,
     output_bytes: int = 0,
     libs: Optional[list[str]] = None,
-    qemu_user: Optional[str] = None,
     gdb_port: int = 1234,
-    arch: Optional[str] = None,
     env: Optional[dict[str, str]] = None,
 ) -> Tuple[
     EdgeCoverage,
@@ -57,6 +116,16 @@ def run_target(
     proc = None
     if env is None:
         env = os.environ.copy()
+    qemu_user = None
+    host_arch = platform.machine().lower()
+    target_arch = _detect_arch(target)
+    if target_arch != host_arch:
+        qemu_user = _find_qemu_user(target_arch)
+        if not qemu_user:
+            raise RuntimeError(
+                f"qemu-user for architecture {target_arch} not found"
+            )
+        logging.debug("Using qemu-user %s for %s", qemu_user, target_arch)
     try:
         if file_input:
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -103,7 +172,7 @@ def run_target(
 
         logging.debug("Collecting coverage from pid %d", proc.pid)
         if qemu_user:
-            collector = coverage.get_gdb_collector("127.0.0.1", gdb_port, arch or "x86_64")
+            collector = coverage.get_gdb_collector("127.0.0.1", gdb_port, target_arch)
         else:
             collector = coverage.get_collector()
         try:
