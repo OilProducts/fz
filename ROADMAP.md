@@ -36,6 +36,22 @@ Scheduling & Corpus
 - Weighted power schedule favoring new coverage and low-cost seeds; dictionary-driven mutations supported.
 - Parallel workers (`--jobs N`) with a shared corpus and per-worker locks; safe file operations.
 
+## Current Status vs Plan
+- Execution & emulation: Partial — `run_target()` auto-detects non-host arch and runs `qemu-<arch> -g <port>`; now correctly maps MIPS/MIPS64 (el/be) to qemu names. Dynamic port selection still missing.
+- Coverage (ptrace/native): Complete — Linux and macOS collectors insert/restore breakpoints and collect BB edge coverage; covered by tests.
+- Coverage (qemu-user via GDB/RSP): Partial — minimal RSP client exists; supports x86_64/arm64 PC decoding; uses raw memory writes instead of `Z0/z0`; no `qXfer:memory-map` base discovery; no MIPS handling yet.
+- Static analysis (BBs/edges): Complete (ELF) / Partial (Mach-O) — disassembler selection now derives from the binary’s ELF header, including MIPS32/MIPS64 and endianness. Mach-O path still host-limited but adequate for tests.
+- Crash handling & bucketing: Partial — crash/timeout categorization saved in corpus; no bucketing by signal/top PC; no GDB stop reason/register capture.
+- Minimizer & repro: Partial — ddmin-style minimizer integrated in `Corpus.minimize_input`; no `fz repro` subcommand; no `fz-corpus minimize` CLI.
+- Dictionary-driven mutations: Not started — no AFL-style dictionary parsing/mining.
+- Coverage-guided culling: Not started — no cull pass or command; selection uses unseen-edge weighting only.
+- Power schedule: Partial — seed weighting by unseen edges exists; no cost-aware/strategy modes.
+- Parallel workers: Partial — multi-process fuzzing with shared corpus exists; per-worker GDB port management added defensively (collector errors are handled), but explicit port allocation and crash file locking still missing.
+- Arch support modules: Partial — `arch/x86.py`, `arch/arm64.py` present; MIPS-specific arch helpers still absent (not required for current flow).
+- CLI & UX: Partial — `--gdb-port`, `--file-input`, `--parallel`, `--minimize` exist; missing `--emulator`, `--arch`, `--bbcov`, and target `--args` passthrough.
+- Example harness/docs for MIPS `zip`: Not started — binary exists at repo root; no example script/docs yet.
+- Tests: Partial — solid coverage for ptrace collectors and utils; RSP client untested; no MIPS fixtures yet (manual validation done on repo `zip`).
+
 ## Milestones
 1) Implement arch detection and qemu-user runner (no coverage; black-box exec with timeouts).
 2) Add static analyzer for BBs (ELF + Capstone for MIPS) with on-disk cache.

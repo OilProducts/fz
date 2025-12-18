@@ -218,20 +218,26 @@ class Corpus:
 
 
 def corpus_stats(directory: str) -> tuple[int, int]:
-    """Return the number of corpus entries and unique edges in *directory*."""
+    """Return the number of corpus entries and unique edges in ``directory``.
+
+    This scans all subdirectories (e.g. ``interesting/``, ``crash/``,
+    ``timeout/``) for JSON records and accumulates unique edge counts across
+    the entire corpus tree.
+    """
     entries = 0
     edges = set()
     if not os.path.isdir(directory):
         return entries, 0
-    for name in os.listdir(directory):
-        if not name.endswith(".json"):
-            continue
-        path = os.path.join(directory, name)
-        try:
-            with open(path) as f:
-                record = json.load(f)
-            edges.update(decode_coverage(record.get("coverage", [])).keys())
-            entries += 1
-        except Exception:
-            continue
+    for root, _dirs, files in os.walk(directory):
+        for name in files:
+            if not name.endswith(".json"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                with open(path) as f:
+                    record = json.load(f)
+                edges.update(decode_coverage(record.get("coverage", [])).keys())
+                entries += 1
+            except Exception:
+                continue
     return entries, len(edges)

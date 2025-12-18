@@ -52,9 +52,14 @@ class Fuzzer:
                 gdb_port=gdb_port,
                 env=None,
             )
-            logging.debug(
-                "Run returned %d coverage entries", len(coverage_set)
-            )
+            if coverage_set:
+                logging.info(
+                    "Run returned %d coverage entries", len(coverage_set)
+                )
+            else:
+                logging.debug(
+                    "Run returned %d coverage entries", len(coverage_set)
+                )
 
         category = "interesting"
         if crashed:

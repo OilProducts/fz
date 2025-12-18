@@ -1,3 +1,4 @@
+import base64
 import os
 import sys
 from typing import Optional, Tuple
@@ -28,6 +29,9 @@ class PreloadHarness:
         env = os.environ.copy()
         var = "DYLD_INSERT_LIBRARIES" if sys.platform == "darwin" else "LD_PRELOAD"
         env[var] = self.library
+        # Allow preload stubs (like net_stub.c) to consume fuzz bytes without
+        # relying on stdin/file inputs.
+        env["FZ_PRELOAD_DATA_B64"] = base64.b64encode(data).decode("ascii")
         return run_target(
             target,
             data,
@@ -37,4 +41,3 @@ class PreloadHarness:
             libs=libs,
             env=env,
         )
-

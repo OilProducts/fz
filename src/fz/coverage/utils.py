@@ -3,7 +3,20 @@ import os
 import platform
 
 from typing import List, Set
-from capstone import Cs, CS_ARCH_X86, CS_ARCH_ARM64, CS_MODE_64, CS_MODE_ARM
+from capstone import (
+    Cs,
+    CS_ARCH_X86,
+    CS_ARCH_ARM64,
+    CS_ARCH_ARM,
+    CS_ARCH_MIPS,
+    CS_MODE_64,
+    CS_MODE_32,
+    CS_MODE_ARM,
+    CS_MODE_MIPS32,
+    CS_MODE_MIPS64,
+    CS_MODE_LITTLE_ENDIAN,
+    CS_MODE_BIG_ENDIAN,
+)
 from capstone import CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_OP_IMM
 from elftools.elf.elffile import ELFFile
 from macholib.MachO import MachO
@@ -79,8 +92,71 @@ def _load_text_macho(exe: str) -> tuple[bytes, int]:
     raise ValueError("__TEXT,__text section not found")
 
 
-def _get_disassembler():
-    """Return a Capstone disassembler configured for the host architecture."""
+def _get_disassembler(exe: str):
+    """Return a Capstone disassembler configured for the binary at ``exe``.
+
+    Falls back to host defaults when format or architecture cannot be
+    determined. Supports x86 (32/64), AArch64, ARM, and MIPS (32/64, LE/BE).
+    """
+    try:
+        with open(exe, "rb") as f:
+            magic = f.read(4)
+    except Exception:
+        magic = b""
+
+    try:
+        if magic == b"\x7fELF":
+            with open(exe, "rb") as f:
+                elf = ELFFile(f)
+                mach = elf.header["e_machine"]
+                if mach == "EM_X86_64":
+                    md = Cs(CS_ARCH_X86, CS_MODE_64)
+                elif mach in ("EM_386", "EM_486"):
+                    md = Cs(CS_ARCH_X86, CS_MODE_32)
+                elif mach == "EM_AARCH64":
+                    md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
+                elif mach == "EM_ARM":
+                    md = Cs(CS_ARCH_ARM, CS_MODE_ARM)
+                elif "MIPS" in mach:
+                    bits = 64 if getattr(elf, "elfclass", 0) == 64 else 32
+                    little = getattr(elf, "little_endian", True)
+                    mode = CS_MODE_MIPS64 if bits == 64 else CS_MODE_MIPS32
+                    mode |= CS_MODE_LITTLE_ENDIAN if little else CS_MODE_BIG_ENDIAN
+                    md = Cs(CS_ARCH_MIPS, mode)
+                else:
+                    raise ValueError("unknown ELF machine")
+                md.detail = True
+                return md
+
+        # Mach-O: derive disassembler from first header's cputype
+        MACHO_MAGICS = {
+            b"\xfe\xed\xfa\xce",
+            b"\xce\xfa\xed\xfe",
+            b"\xfe\xed\xfa\xcf",
+            b"\xcf\xfa\xed\xfe",
+            b"\xca\xfe\xba\xbe",
+            b"\xbe\xba\xfe\xca",
+            b"\xca\xfe\xba\xbf",
+            b"\xbf\xba\xfe\xca",
+        }
+        if magic in MACHO_MAGICS:
+            m = MachO(exe)
+            if m.headers:
+                from macholib.mach_o import CPU_TYPE_X86_64, CPU_TYPE_ARM64
+
+                cpu = m.headers[0].header.cputype
+                if cpu == CPU_TYPE_X86_64:
+                    md = Cs(CS_ARCH_X86, CS_MODE_64)
+                elif cpu == CPU_TYPE_ARM64:
+                    md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
+                else:
+                    raise ValueError("unknown Mach-O CPU type")
+                md.detail = True
+                return md
+    except Exception:
+        pass
+
+    # Fallback to host arch defaults
     arch = platform.machine().lower()
     if arch in ("aarch64", "arm64"):
         md = Cs(CS_ARCH_ARM64, CS_MODE_ARM)
@@ -117,7 +193,7 @@ def get_basic_blocks(exe: str) -> List[int]:
         _block_cache[exe] = []
         return _block_cache[exe]
 
-    md = _get_disassembler()
+    md = _get_disassembler(exe)
     blocks = set()
     prev_branch = True
     for insn in md.disasm(text, base):
@@ -164,7 +240,7 @@ def get_possible_edges(exe: str) -> Set[Edge]:
         _edge_cache[exe] = set()
         return _edge_cache[exe]
 
-    md = _get_disassembler()
+    md = _get_disassembler(exe)
     edges = set()
     prev_addr = None
     prev_type = None  # None, 'cond', 'uncond'

@@ -78,9 +78,13 @@ class NetworkHarness:
             sock.sendall(data)
             sock.close()
             collector = coverage.get_collector()
-            coverage_set = collector.collect_coverage(
-                proc.pid, timeout, already_traced=True, libs=libs
-            )
+            try:
+                coverage_set = collector.collect_coverage(
+                    proc.pid, timeout, already_traced=True, libs=libs
+                )
+            except Exception as e:
+                logging.debug("Collector error for pid %d: %s", proc.pid, e)
+                coverage_set = {}
             logging.debug("Collected %d coverage entries", len(coverage_set))
             try:
                 proc.wait(timeout=timeout)
